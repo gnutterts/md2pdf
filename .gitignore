@@ -1,0 +1,20 @@
+# Compiled binaries
+/md2pdf
+/md2pdf-*
+*.exe
+
+# Vendored modules: used to build offline in a scratch worktree, never committed
+/vendor/
+
+# Generated output from manual checks
+*.pdf
+*.pdf.png
+
+# Local working material that is deliberately untracked
+/tmp/
+
+# Editor, OS and tooling leftovers
+.DS_Store
+.direnv/
+Library/
+/go/
