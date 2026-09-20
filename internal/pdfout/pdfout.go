@@ -2,7 +2,9 @@
 package pdfout
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -19,8 +21,9 @@ const (
 
 // Document is een A4-PDF met een tekenvlak.
 type Document struct {
-	pdf         *fpdf.Fpdf
-	inspringing float64
+	pdf          *fpdf.Fpdf
+	inspringing  float64
+	afbeeldingen int
 }
 
 // Nieuw maakt een leeg A4-document.
@@ -81,6 +84,37 @@ func (v documentVel) Codeblok(regels []string) {
 		v.d.pdf.CellFormat(v.tekstbreedte(), 12, regel, "", 0, "", false, 0, "")
 		v.Regeleinde(12)
 	}
+}
+
+// Diagram registreert en tekent een PNG zonder tijdelijk bestand.
+func (v documentVel) Diagram(png []byte) error {
+	v.d.afbeeldingen++
+	naam := fmt.Sprintf("diagram-%d.png", v.d.afbeeldingen)
+	opties := fpdf.ImageOptions{ImageType: "PNG"}
+	info := v.d.pdf.RegisterImageOptionsReader(naam, opties, bytes.NewReader(png))
+	if err := v.d.pdf.Error(); err != nil {
+		return err
+	}
+	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
+		return errors.New("ongeldige PNG voor diagram")
+	}
+	breedte := min(info.Width(), v.tekstbreedte())
+	hoogte := info.Height() * breedte / info.Width()
+	// Een diagram dat hoger is dan een hele pagina zou over de rand lopen en
+	// afgekapt worden; dan bepaalt de paginahoogte de schaal, niet de breedte.
+	if maxHoogte := v.paginaTekstHoogte(); hoogte > maxHoogte {
+		hoogte = maxHoogte
+		breedte = info.Width() * hoogte / info.Height()
+	}
+	if !v.pastRij(hoogte) {
+		v.NieuwePagina()
+	}
+	v.d.pdf.ImageOptions(naam, v.d.pdf.GetX(), v.d.pdf.GetY(), breedte, hoogte, true, opties, 0, "")
+	if err := v.d.pdf.Error(); err != nil {
+		return err
+	}
+	v.zetX()
+	return nil
 }
 
 const (
@@ -234,6 +268,13 @@ func (v documentVel) rijhoogte(rij markdown.Rij, breedtes []float64) float64 {
 		}
 	}
 	return hoogte
+}
+
+// paginaTekstHoogte is de hoogte die op één pagina beschikbaar is voor inhoud.
+func (v documentVel) paginaTekstHoogte() float64 {
+	_, paginaHoogte := v.d.pdf.GetPageSize()
+	_, boven, _, onder := v.d.pdf.GetMargins()
+	return paginaHoogte - boven - onder
 }
 
 // pastRij geeft aan of een rij nog op de huidige pagina past.

@@ -2,10 +2,13 @@ package render
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
+	"github.com/gnutterts/md2pdf/internal/mermaid"
 )
 
 type actieveStijl struct {
@@ -39,7 +42,8 @@ func (n *nepVel) HangendInspringen()   { n.aanroepen = append(n.aanroepen, "hang
 func (n *nepVel) Codeblok(r []string) {
 	n.aanroepen = append(n.aanroepen, "code:"+strings.Join(r, ","))
 }
-func (n *nepVel) Streep() { n.aanroepen = append(n.aanroepen, "streep") }
+func (n *nepVel) Diagram([]byte) error { n.aanroepen = append(n.aanroepen, "diagram"); return nil }
+func (n *nepVel) Streep()              { n.aanroepen = append(n.aanroepen, "streep") }
 func (n *nepVel) Tabel(rijen []markdown.Rij) {
 	n.tabellen = append(n.tabellen, rijen)
 	n.aanroepen = append(n.aanroepen, fmt.Sprintf("tabel:%d", len(rijen)))
@@ -48,6 +52,50 @@ func (n *nepVel) Fout() error { return nil }
 func (s actieveStijl) string() string {
 	return fmt.Sprintf("%s:%s:%g", s.familie, stijl(s.vet, s.cursief), s.grootte)
 }
+func TestTekenMermaidTerugval(t *testing.T) {
+	blok := []markdown.Blok{{Soort: markdown.Codeblok, Taal: "mermaid", Regels: []string{"graph TD", "A-->B"}}}
+	for _, test := range []struct {
+		naam, script   string
+		wilDiagram     bool
+		waarschuwingen int
+	}{
+		{"gelukt", "#!/bin/sh\nprintf png > \"$4\"\n", true, 0},
+		{"faalt", "#!/bin/sh\nexit 1\n", false, 1},
+		{"uit", "", false, 0},
+	} {
+		t.Run(test.naam, func(t *testing.T) {
+			vel := &nepVel{}
+			opties := Opties{}
+			if test.script != "" {
+				pad := filepath.Join(t.TempDir(), "renderer")
+				if err := os.WriteFile(pad, []byte(test.script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				opties.Mermaid = mermaid.Renderer{Pad: pad}
+			}
+			waarschuwingen := 0
+			opties.Waarschuw = func(string) { waarschuwingen++ }
+			if err := Teken(blok, vel, opties); err != nil {
+				t.Fatal(err)
+			}
+			heeftDiagram := bevat(vel.aanroepen, "diagram")
+			heeftCode := bevat(vel.aanroepen, "code:graph TD,A-->B")
+			if heeftDiagram != test.wilDiagram || heeftCode == test.wilDiagram || waarschuwingen != test.waarschuwingen {
+				t.Fatalf("aanroepen=%v, waarschuwingen=%d", vel.aanroepen, waarschuwingen)
+			}
+		})
+	}
+}
+
+func bevat(aanroepen []string, wil string) bool {
+	for _, aanroep := range aanroepen {
+		if aanroep == wil {
+			return true
+		}
+	}
+	return false
+}
+
 func stijl(v, c bool) string {
 	if v && c {
 		return "BI"
@@ -76,7 +124,7 @@ func TestTekenVolgordeEnStijlen(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.naam, func(t *testing.T) {
 			vel := &nepVel{}
-			if err := Teken(test.blokken, vel); err != nil {
+			if err := Teken(test.blokken, vel, Opties{}); err != nil {
 				t.Fatal(err)
 			}
 			controleerVolgorde(t, vel.aanroepen, test.wil)
@@ -90,7 +138,7 @@ func TestTekenTabel(t *testing.T) {
 		{Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: "1"}}}, {Stukken: []markdown.Stuk{{Tekst: "2"}}}}},
 	}}}
 	vel := &nepVel{}
-	if err := Teken(blokken, vel); err != nil {
+	if err := Teken(blokken, vel, Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	tabelAanroepen := 0
@@ -112,7 +160,7 @@ func TestTekenTabel(t *testing.T) {
 
 func TestRegelhoogteVolgtKopgrootte(t *testing.T) {
 	vel := &nepVel{}
-	if err := Teken([]markdown.Blok{{Soort: markdown.Kop, Niveau: 1, Stukken: []markdown.Stuk{{Tekst: "Titel"}}}}, vel); err != nil {
+	if err := Teken([]markdown.Blok{{Soort: markdown.Kop, Niveau: 1, Stukken: []markdown.Stuk{{Tekst: "Titel"}}}}, vel, Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	controleerVolgorde(t, vel.aanroepen, []string{"einde:27"})
@@ -135,7 +183,7 @@ func TestTekstStijlen(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.naam, func(t *testing.T) {
 			vel := &nepVel{}
-			if err := Teken([]markdown.Blok{test.blok}, vel); err != nil {
+			if err := Teken([]markdown.Blok{test.blok}, vel, Opties{}); err != nil {
 				t.Fatal(err)
 			}
 			controleerVolgorde(t, vel.aanroepen, []string{test.wil})

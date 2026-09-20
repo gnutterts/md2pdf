@@ -8,14 +8,40 @@ import (
 	"testing"
 
 	"github.com/gnutterts/md2pdf/internal/cli"
+	"github.com/gnutterts/md2pdf/internal/mermaid"
+	"github.com/gnutterts/md2pdf/internal/render"
 )
+
+func TestVoerMermaidFoutWaarschuwtEnGaatDoor(t *testing.T) {
+	mapnaam := t.TempDir()
+	bron := filepath.Join(mapnaam, "diagram.md")
+	if err := os.WriteFile(bron, []byte("```mermaid\ngraph TD\nA-->B\n```\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(mapnaam, "faalt")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doel := filepath.Join(mapnaam, "diagram.pdf")
+	waarschuwingen := 0
+	opties := render.Opties{Mermaid: mermaid.Renderer{Pad: script}, Waarschuw: func(string) { waarschuwingen++ }}
+	if err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{Bronnen: []string{bron}, Doel: doel}}}, opties); err != nil {
+		t.Fatal(err)
+	}
+	if waarschuwingen != 1 {
+		t.Fatalf("waarschuwingen = %d, wil 1", waarschuwingen)
+	}
+	if inhoud, err := os.ReadFile(doel); err != nil || !bytes.HasPrefix(inhoud, []byte("%PDF-")) {
+		t.Fatalf("PDF ontbreekt of is ongeldig: %v", err)
+	}
+}
 
 func TestVoerEnkelSchrijftPDF(t *testing.T) {
 	doel := filepath.Join(t.TempDir(), "README.pdf")
 	plan := cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{
 		Bronnen: []string{leesPad("README.md")}, Doel: doel,
 	}}}
-	if err := Voer(plan); err != nil {
+	if err := Voer(plan, render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	inhoud, err := os.ReadFile(doel)
@@ -30,7 +56,7 @@ func TestVoerEnkelSchrijftPDF(t *testing.T) {
 func TestVoerSamengevoegdSchrijftPaginas(t *testing.T) {
 	bronnen := wikiBronnen()
 	doel := filepath.Join(t.TempDir(), "wiki.pdf")
-	if err := Voer(cli.Plan{Modus: cli.ModusSamengevoegd, Taken: []cli.Taak{{Bronnen: bronnen, Doel: doel}}}); err != nil {
+	if err := Voer(cli.Plan{Modus: cli.ModusSamengevoegd, Taken: []cli.Taak{{Bronnen: bronnen, Doel: doel}}}, render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	inhoud, err := os.ReadFile(doel)
@@ -42,7 +68,7 @@ func TestVoerSamengevoegdSchrijftPaginas(t *testing.T) {
 	}
 
 	enkel := filepath.Join(t.TempDir(), "enkel.pdf")
-	if err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{Bronnen: bronnen[:1], Doel: enkel}}}); err != nil {
+	if err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{Bronnen: bronnen[:1], Doel: enkel}}}, render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	enkeleInhoud, err := os.ReadFile(enkel)
@@ -61,7 +87,7 @@ func TestVoerLosSchrijftBestanden(t *testing.T) {
 	for i, bron := range bronnen {
 		taken[i] = cli.Taak{Bronnen: []string{bron}, Doel: filepath.Join(mapnaam, strings.TrimSuffix(filepath.Base(bron), ".md")+".pdf")}
 	}
-	if err := Voer(cli.Plan{Modus: cli.ModusLos, Taken: taken}); err != nil {
+	if err := Voer(cli.Plan{Modus: cli.ModusLos, Taken: taken}, render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, taak := range taken {
@@ -81,7 +107,7 @@ func TestVoerLosSchrijftBestanden(t *testing.T) {
 func TestVoerLosMaaktDoelmap(t *testing.T) {
 	doel := filepath.Join(t.TempDir(), "nieuw", "README.pdf")
 	plan := cli.Plan{Modus: cli.ModusLos, Taken: []cli.Taak{{Bronnen: []string{leesPad("README.md")}, Doel: doel}}}
-	if err := Voer(plan); err != nil {
+	if err := Voer(plan, render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Dir(doel)); err != nil {
@@ -91,7 +117,7 @@ func TestVoerLosMaaktDoelmap(t *testing.T) {
 
 func TestVoerOntbrekendeBronGeeftFout(t *testing.T) {
 	bron := filepath.Join(t.TempDir(), "ontbreekt.md")
-	err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{Bronnen: []string{bron}, Doel: filepath.Join(t.TempDir(), "uit.pdf")}}})
+	err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{Bronnen: []string{bron}, Doel: filepath.Join(t.TempDir(), "uit.pdf")}}}, render.Opties{})
 	if err == nil || !strings.Contains(err.Error(), bron) {
 		t.Fatalf("fout = %v, wil pad %q", err, bron)
 	}
@@ -109,7 +135,7 @@ func TestVoerKanNietSchrijven(t *testing.T) {
 
 	err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{
 		Bronnen: []string{leesPad("README.md")}, Doel: filepath.Join(mapnaam, "uit.pdf"),
-	}}})
+	}}}, render.Opties{})
 	if err == nil {
 		t.Fatal("schrijven in een alleen-lezen map lukte")
 	}

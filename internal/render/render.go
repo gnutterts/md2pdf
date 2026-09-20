@@ -2,10 +2,13 @@
 package render
 
 import (
+	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
+	"github.com/gnutterts/md2pdf/internal/mermaid"
 )
 
 // Vel is het abstracte tekenvlak voor een PDF-document.
@@ -25,6 +28,9 @@ type Vel interface {
 	// Tabel tekent een volledige tabel: het vel bepaalt kolombreedtes en
 	// paginabreuken, omdat alleen daar de fontmetrieken bekend zijn.
 	Tabel(rijen []markdown.Rij)
+	// Diagram tekent een PNG op de volle tekstbreedte, met behoud van
+	// verhouding, en begint op een nieuwe pagina als het niet meer past.
+	Diagram(png []byte) error
 	Fout() error
 }
 
@@ -41,8 +47,14 @@ func hoogteVoor(grootte float64) float64 {
 	return math.Max(regelhoogte, hoogte)
 }
 
+// Opties bepaalt optioneel hoe diagrammen worden gerenderd.
+type Opties struct {
+	Mermaid   mermaid.Renderer
+	Waarschuw func(melding string)
+}
+
 // Teken tekent blokken in hun oorspronkelijke volgorde.
-func Teken(blokken []markdown.Blok, vel Vel) error {
+func Teken(blokken []markdown.Blok, vel Vel, opties Opties) error {
 	eerste := true
 	for _, blok := range blokken {
 		switch blok.Soort {
@@ -84,11 +96,18 @@ func Teken(blokken []markdown.Blok, vel Vel) error {
 			vel.Regeleinde(hoogteVoor(basis.grootte))
 			vel.Inspringen(-float64(blok.Diepte) * 14)
 		case markdown.Codeblok:
-			vel.Inspringen(10)
-			vel.Stijl("Courier", false, false, 9.5)
-			vel.Codeblok(blok.Regels)
-			vel.Inspringen(-10)
-			vel.Regeleinde(6)
+			if blok.Taal == "mermaid" && opties.Mermaid.Beschikbaar() {
+				png, err := opties.Mermaid.NaarPNG(strings.Join(blok.Regels, "\n"))
+				if err == nil {
+					err = vel.Diagram(png)
+				}
+				if err == nil {
+					vel.Regeleinde(6)
+					break
+				}
+				waarschuw(opties, fmt.Sprintf("mermaid-diagram kon niet worden getekend: %v", err))
+			}
+			tekenCodeblok(vel, blok.Regels)
 		case markdown.Citaat:
 			vel.Inspringen(14)
 			basis := basisstijl{familie: "Helvetica", grootte: 11, cursief: true}
@@ -107,6 +126,20 @@ func Teken(blokken []markdown.Blok, vel Vel) error {
 		eerste = false
 	}
 	return vel.Fout()
+}
+
+func tekenCodeblok(vel Vel, regels []string) {
+	vel.Inspringen(10)
+	vel.Stijl("Courier", false, false, 9.5)
+	vel.Codeblok(regels)
+	vel.Inspringen(-10)
+	vel.Regeleinde(6)
+}
+
+func waarschuw(opties Opties, melding string) {
+	if opties.Waarschuw != nil {
+		opties.Waarschuw(melding)
+	}
 }
 
 func stukken(vel Vel, stukken []markdown.Stuk, basis basisstijl) {

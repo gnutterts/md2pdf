@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"compress/zlib"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,10 +19,41 @@ import (
 	"github.com/gnutterts/md2pdf/internal/render"
 )
 
+func TestDiagramPNG(t *testing.T) {
+	var pngBytes bytes.Buffer
+	pngAfbeelding := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	pngAfbeelding.Set(0, 0, color.Black)
+	if err := png.Encode(&pngBytes, pngAfbeelding); err != nil {
+		t.Fatal(err)
+	}
+	document := Nieuw()
+	if err := document.Vel().Diagram(pngBytes.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	pad := filepath.Join(t.TempDir(), "diagram.pdf")
+	if err := document.Schrijf(pad); err != nil {
+		t.Fatal(err)
+	}
+	inhoud, err := os.ReadFile(pad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(inhoud, []byte("/Subtype /Image")) {
+		t.Fatal("PDF bevat geen afbeelding")
+	}
+}
+
+func TestDiagramOngeldigePNGGeeftFout(t *testing.T) {
+	document := Nieuw()
+	if err := document.Vel().Diagram([]byte("geen PNG")); err == nil {
+		t.Fatal("ongeldige PNG gaf geen fout")
+	}
+}
+
 func TestSchrijfPDF(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "alinea.pdf")
 	document := Nieuw()
-	if err := render.Teken([]markdown.Blok{{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "Een alinea."}}}}, document.Vel()); err != nil {
+	if err := render.Teken([]markdown.Blok{{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "Een alinea."}}}}, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Schrijf(pad); err != nil {
@@ -38,7 +72,7 @@ func TestCP1252StaatInInhoudsstroom(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "tekens.pdf")
 	document := Nieuw()
 	blokken := []markdown.Blok{{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "café —"}}}}
-	if err := render.Teken(blokken, document.Vel()); err != nil {
+	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Schrijf(pad); err != nil {
@@ -64,7 +98,7 @@ func TestLangLijstitemBlijftIngesprongen(t *testing.T) {
 		{Soort: markdown.Lijstitem, Diepte: 1, Stukken: []markdown.Stuk{{Tekst: strings.Repeat("een lang lijstitem ", 40)}}},
 		{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "einde"}}},
 	}
-	if err := render.Teken(blokken, document.Vel()); err != nil {
+	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Schrijf(pad); err != nil {
@@ -247,7 +281,7 @@ func TestRenderREADMENaarPDF(t *testing.T) {
 	}
 	pad := filepath.Join(t.TempDir(), "readme.pdf")
 	document := Nieuw()
-	if err := render.Teken(blokken, document.Vel()); err != nil {
+	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Schrijf(pad); err != nil {
@@ -256,5 +290,30 @@ func TestRenderREADMENaarPDF(t *testing.T) {
 	info, err := os.Stat(pad)
 	if err != nil || info.Size() == 0 {
 		t.Fatalf("uitvoer = %v, %v", info, err)
+	}
+}
+
+func TestDiagramHogerDanEenPaginaWordtGeschaald(t *testing.T) {
+	document := Nieuw()
+	// Een smal en zeer hoog plaatje: op de volle tekstbreedte zou het ruim
+	// hoger worden dan een pagina.
+	smalEnHoog := image.NewRGBA(image.Rect(0, 0, 100, 900))
+	var pngBytes bytes.Buffer
+	if err := png.Encode(&pngBytes, smalEnHoog); err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Vel().Diagram(pngBytes.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	pad := filepath.Join(t.TempDir(), "diagram.pdf")
+	if err := document.Schrijf(pad); err != nil {
+		t.Fatal(err)
+	}
+	inhoud, err := os.ReadFile(pad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paginaAantal(inhoud) != 1 {
+		t.Fatalf("diagram beslaat %d pagina's, wil er één", paginaAantal(inhoud))
 	}
 }

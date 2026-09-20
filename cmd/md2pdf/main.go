@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/gnutterts/md2pdf/internal/cli"
+	"github.com/gnutterts/md2pdf/internal/mermaid"
+	"github.com/gnutterts/md2pdf/internal/render"
 	"github.com/gnutterts/md2pdf/internal/uitvoer"
 )
 
@@ -31,5 +33,11 @@ func uitvoeren(args []string) error {
 	if err != nil {
 		return err
 	}
-	return uitvoer.Voer(plan)
+	opties := render.Opties{
+		Mermaid: mermaid.Kies(plan.Mermaid, os.Getenv("MD2PDF_MERMAID")),
+		Waarschuw: func(melding string) {
+			fmt.Fprintln(os.Stderr, "waarschuwing:", melding)
+		},
+	}
+	return uitvoer.Voer(plan, opties)
 }

@@ -30,8 +30,9 @@ type Taak struct {
 
 // Plan is de volledige, geordende verwerking.
 type Plan struct {
-	Modus Modus
-	Taken []Taak
+	Modus   Modus
+	Taken   []Taak
+	Mermaid string
 }
 
 // Bestandssysteem bevat de leesbewerkingen die voor plannen nodig zijn.
@@ -73,11 +74,11 @@ var (
 )
 
 // Gebruik is de korte gebruikstekst voor de opdracht.
-const Gebruik = "Gebruik: md2pdf [-o pad] [--los|-l] <bestand-of-map>"
+const Gebruik = "Gebruik: md2pdf [-o pad] [--los|-l] [--mermaid pad] <bestand-of-map>"
 
 // Plannen zet argumenten om in een volledig uitvoerplan.
 func Plannen(args []string, fs Bestandssysteem) (Plan, error) {
-	los, uitvoer, posities, err := ontleed(args)
+	los, uitvoer, mermaid, posities, err := ontleed(args)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -94,46 +95,52 @@ func Plannen(args []string, fs Bestandssysteem) (Plan, error) {
 		return Plan{}, fmt.Errorf("kan %q niet lezen: %w", invoer, err)
 	}
 	if !isMap {
-		return planBestand(invoer, uitvoer, los, fs)
+		return planBestand(invoer, uitvoer, mermaid, los, fs)
 	}
-	return planMap(invoer, uitvoer, los, fs)
+	return planMap(invoer, uitvoer, mermaid, los, fs)
 }
 
 // ontleed splitst vlaggen van positionele argumenten. ErrHulp en ErrVersie
 // komen als fout terug; de aanroeper herkent ze met errors.Is.
-func ontleed(args []string) (bool, string, []string, error) {
+func ontleed(args []string) (bool, string, string, []string, error) {
 	var los bool
-	var uitvoer string
+	var uitvoer, mermaid string
 	var posities []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
 		case "-h", "--help":
-			return false, "", nil, ErrHulp
+			return false, "", "", nil, ErrHulp
 		case "--version":
-			return false, "", nil, ErrVersie
+			return false, "", "", nil, ErrVersie
 		case "--los", "-l":
 			los = true
 		case "-o":
 			if i+1 == len(args) {
-				return false, "", nil, errors.New("-o verwacht een pad")
+				return false, "", "", nil, errors.New("-o verwacht een pad")
 			}
 			i++
 			uitvoer = args[i]
+		case "--mermaid":
+			if i+1 == len(args) {
+				return false, "", "", nil, errors.New("--mermaid verwacht een pad")
+			}
+			i++
+			mermaid = args[i]
 		case "--":
 			posities = append(posities, args[i+1:]...)
 			i = len(args)
 		default:
 			if strings.HasPrefix(arg, "-") {
-				return false, "", nil, fmt.Errorf("onbekende vlag: %s", arg)
+				return false, "", "", nil, fmt.Errorf("onbekende vlag: %s", arg)
 			}
 			posities = append(posities, arg)
 		}
 	}
-	return los, uitvoer, posities, nil
+	return los, uitvoer, mermaid, posities, nil
 }
 
-func planBestand(invoer, uitvoer string, los bool, fs Bestandssysteem) (Plan, error) {
+func planBestand(invoer, uitvoer, mermaid string, los bool, fs Bestandssysteem) (Plan, error) {
 	if los {
 		return Plan{}, errors.New("--los werkt alleen op een map")
 	}
@@ -142,10 +149,10 @@ func planBestand(invoer, uitvoer string, los bool, fs Bestandssysteem) (Plan, er
 	} else if err := bestandDoel(uitvoer, fs); err != nil {
 		return Plan{}, err
 	}
-	return Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{invoer}, Doel: uitvoer}}}, nil
+	return Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{invoer}, Doel: uitvoer}}, Mermaid: mermaid}, nil
 }
 
-func planMap(invoer, uitvoer string, los bool, fs Bestandssysteem) (Plan, error) {
+func planMap(invoer, uitvoer, mermaid string, los bool, fs Bestandssysteem) (Plan, error) {
 	bronnen, err := markdownBestanden(invoer, fs)
 	if err != nil {
 		return Plan{}, err
@@ -164,14 +171,14 @@ func planMap(invoer, uitvoer string, los bool, fs Bestandssysteem) (Plan, error)
 			}
 			taken[i] = Taak{Bronnen: []string{bron}, Doel: doel}
 		}
-		return Plan{Modus: ModusLos, Taken: taken}, nil
+		return Plan{Modus: ModusLos, Taken: taken, Mermaid: mermaid}, nil
 	}
 	if uitvoer == "" {
 		uitvoer = filepath.Clean(invoer) + ".pdf"
 	} else if err := bestandDoel(uitvoer, fs); err != nil {
 		return Plan{}, err
 	}
-	return Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: bronnen, Doel: uitvoer}}}, nil
+	return Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: bronnen, Doel: uitvoer}}, Mermaid: mermaid}, nil
 }
 
 func markdownBestanden(mapnaam string, fs Bestandssysteem) ([]string, error) {

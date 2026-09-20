@@ -10,6 +10,7 @@
 |---|---|
 | `-o <pad>` | Uitvoerbestand, of bij `--los` de uitvoermap |
 | `--los`, `-l` | Maak een PDF per Markdown-bestand in een map |
+| `--mermaid <pad>` | Pad naar de Mermaid-renderer |
 | `--version` | Druk de versie af |
 | `-h`, `--help` | Druk het gebruik af |
 
@@ -43,9 +44,13 @@ eigen breedte en een herhaalde kopregel als ze over pagina's lopen.
 De tekst wordt gezet in de base-14 fonts van PDF, die coderen in cp1252. Tekens daarbuiten worden
 vertaald waar dat kan — `→` wordt `->` — en anders vervangen door een vraagteken.
 
+Mermaid-blokken worden standaard gerenderd met `mmdc`. Kies een andere renderer met
+`--mermaid <pad>` of `MD2PDF_MERMAID`; `uit` schakelt het renderen uit. Als de renderer ontbreekt of
+faalt, verschijnt een waarschuwing op stderr en blijft het diagram als codeblok zichtbaar.
+
 ## Bekende beperkingen
 
-- Mermaid-blokken worden voorlopig als codeblok weergegeven; echte diagrammen volgen.
+- Mermaid-diagrammen vereisen een werkende externe renderer.
 - Inline-opmaak binnen een tabelcel wordt afgevlakt tot platte tekst.
 - Links zijn klikbaar maar niet zichtbaar onderscheiden van gewone tekst.
 - Coderegels die breder zijn dan de tekstkolom worden afgekapt, niet afgebroken.
