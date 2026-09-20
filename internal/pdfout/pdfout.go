@@ -1,4 +1,4 @@
-// Package pdfout biedt een fpdf-implementatie van render.Vel.
+// Package pdfout provides an fpdf implementation of render.Canvas.
 package pdfout
 
 import (
@@ -15,309 +15,309 @@ import (
 )
 
 const (
-	marge   = 56.0
-	breedte = 595.28
+	margin = 56.0
+	width  = 595.28
 )
 
-// Document is een A4-PDF met een tekenvlak.
+// Document is an A4 PDF with a drawing surface.
 type Document struct {
-	pdf          *fpdf.Fpdf
-	inspringing  float64
-	afbeeldingen int
+	pdf    *fpdf.Fpdf
+	indent float64
+	images int
 }
 
-// Nieuw maakt een leeg A4-document.
-func Nieuw() *Document {
+// New creates an empty A4 document.
+func New() *Document {
 	pdf := fpdf.New("P", "pt", "A4", "")
-	pdf.SetMargins(marge, marge, marge)
-	pdf.SetAutoPageBreak(true, marge)
+	pdf.SetMargins(margin, margin, margin)
+	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
 	return &Document{pdf: pdf}
 }
 
-// Vel geeft het tekenvlak van het document terug.
-func (d *Document) Vel() render.Vel { return documentVel{d: d} }
+// Canvas returns the drawing surface of the document.
+func (d *Document) Canvas() render.Canvas { return documentCanvas{d: d} }
 
-// Schrijf schrijft het document naar pad.
-func (d *Document) Schrijf(pad string) error {
+// Write writes the document to path.
+func (d *Document) Write(path string) error {
 	if err := d.pdf.Error(); err != nil {
 		return err
 	}
-	bestand, err := os.Create(pad)
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	uitvoerFout := d.pdf.Output(bestand)
-	sluitFout := bestand.Close()
-	return errors.Join(uitvoerFout, sluitFout)
+	outputErr := d.pdf.Output(file)
+	closeErr := file.Close()
+	return errors.Join(outputErr, closeErr)
 }
 
-type documentVel struct{ d *Document }
+type documentCanvas struct{ d *Document }
 
-func (v documentVel) NieuwePagina() { v.d.pdf.AddPage(); v.zetX() }
-func (v documentVel) Stijl(familie string, vet, cursief bool, grootte float64) {
-	stijl := ""
-	if vet {
-		stijl += "B"
+func (v documentCanvas) NewPage() { v.d.pdf.AddPage(); v.resetX() }
+func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
+	style := ""
+	if bold {
+		style += "B"
 	}
-	if cursief {
-		stijl += "I"
+	if italic {
+		style += "I"
 	}
-	v.d.pdf.SetFont(familie, stijl, grootte)
+	v.d.pdf.SetFont(family, style, size)
 }
-func (v documentVel) Tekst(s string)       { v.d.pdf.Write(15, text.ToCP1252(s)) }
-func (v documentVel) Link(s, url string)   { v.d.pdf.WriteLinkString(15, text.ToCP1252(s), url) }
-func (v documentVel) Regeleinde(h float64) { v.d.pdf.Ln(h); v.zetX() }
-func (v documentVel) Inspringen(p float64) {
-	v.d.inspringing += p
-	v.d.pdf.SetLeftMargin(marge + v.d.inspringing)
-	v.zetX()
+func (v documentCanvas) Text(s string)       { v.d.pdf.Write(15, text.ToCP1252(s)) }
+func (v documentCanvas) Link(s, url string)  { v.d.pdf.WriteLinkString(15, text.ToCP1252(s), url) }
+func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.resetX() }
+func (v documentCanvas) Indent(p float64) {
+	v.d.indent += p
+	v.d.pdf.SetLeftMargin(margin + v.d.indent)
+	v.resetX()
 }
-func (v documentVel) HangendInspringen() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) }
+func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) }
 
-func (v documentVel) Codeblok(regels []string) {
-	for _, regel := range regels {
-		regel = text.ToCP1252(regel)
-		for len(regel) > 0 && v.d.pdf.GetStringWidth(regel) > v.tekstbreedte() {
-			regel = regel[:len(regel)-1]
+func (v documentCanvas) CodeBlock(lines []string) {
+	for _, line := range lines {
+		line = text.ToCP1252(line)
+		for len(line) > 0 && v.d.pdf.GetStringWidth(line) > v.contentWidth() {
+			line = line[:len(line)-1]
 		}
-		v.d.pdf.CellFormat(v.tekstbreedte(), 12, regel, "", 0, "", false, 0, "")
-		v.Regeleinde(12)
+		v.d.pdf.CellFormat(v.contentWidth(), 12, line, "", 0, "", false, 0, "")
+		v.LineBreak(12)
 	}
 }
 
-// Diagram registreert en tekent een PNG zonder tijdelijk bestand.
-func (v documentVel) Diagram(png []byte) error {
-	v.d.afbeeldingen++
-	naam := fmt.Sprintf("diagram-%d.png", v.d.afbeeldingen)
-	opties := fpdf.ImageOptions{ImageType: "PNG"}
-	info := v.d.pdf.RegisterImageOptionsReader(naam, opties, bytes.NewReader(png))
+// Diagram registers and draws a PNG without a temporary file.
+func (v documentCanvas) Diagram(png []byte) error {
+	v.d.images++
+	name := fmt.Sprintf("diagram-%d.png", v.d.images)
+	options := fpdf.ImageOptions{ImageType: "PNG"}
+	info := v.d.pdf.RegisterImageOptionsReader(name, options, bytes.NewReader(png))
 	if err := v.d.pdf.Error(); err != nil {
 		return err
 	}
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
 		return errors.New("ongeldige PNG voor diagram")
 	}
-	breedte := min(info.Width(), v.tekstbreedte())
-	hoogte := info.Height() * breedte / info.Width()
-	// Een diagram dat hoger is dan een hele pagina zou over de rand lopen en
-	// afgekapt worden; dan bepaalt de paginahoogte de schaal, niet de breedte.
-	if maxHoogte := v.paginaTekstHoogte(); hoogte > maxHoogte {
-		hoogte = maxHoogte
-		breedte = info.Width() * hoogte / info.Height()
+	width := min(info.Width(), v.contentWidth())
+	height := info.Height() * width / info.Width()
+	// A diagram taller than a whole page would run over the edge and be
+	// clipped; then the page height determines the scale, not the width.
+	if maxHeight := v.pageContentHeight(); height > maxHeight {
+		height = maxHeight
+		width = info.Width() * height / info.Height()
 	}
-	if !v.pastRij(hoogte) {
-		v.NieuwePagina()
+	if !v.rowFits(height) {
+		v.NewPage()
 	}
-	v.d.pdf.ImageOptions(naam, v.d.pdf.GetX(), v.d.pdf.GetY(), breedte, hoogte, true, opties, 0, "")
+	v.d.pdf.ImageOptions(name, v.d.pdf.GetX(), v.d.pdf.GetY(), width, height, true, options, 0, "")
 	if err := v.d.pdf.Error(); err != nil {
 		return err
 	}
-	v.zetX()
+	v.resetX()
 	return nil
 }
 
 const (
-	tabelFontGrootte = 10.0
-	tabelRegelhoogte = 14.0
-	tabelMinHoogte   = 16.0
-	tabelMinBreedte  = 40.0
-	tabelCelvulling  = 8.0
-	tabelRand        = 0.4
-	tabelGrijs       = 230
+	tableFontSize   = 10.0
+	tableLineHeight = 14.0
+	tableMinHeight  = 16.0
+	tableMinWidth   = 40.0
+	tablePadding    = 8.0
+	tableBorder     = 0.4
+	tableGray       = 230
 )
 
-// Tabel tekent een volledige tabel met kopregel, kolombreedtes en paginabreuken.
-func (v documentVel) Tabel(rijen []markdown.Row) {
-	kolommen := aantalKolommen(rijen)
-	if kolommen == 0 {
+// Table draws a complete table with header row, column widths, and page breaks.
+func (v documentCanvas) Table(rows []markdown.Row) {
+	columns := columnCount(rows)
+	if columns == 0 {
 		return
 	}
 	pdf := v.d.pdf
 
-	autoBreek, breekMarge := pdf.GetAutoPageBreak()
-	celmarge := pdf.GetCellMargin()
-	lijnbreedte := pdf.GetLineWidth()
+	autoBreak, breakMargin := pdf.GetAutoPageBreak()
+	cellMargin := pdf.GetCellMargin()
+	lineWidth := pdf.GetLineWidth()
 	tr, tg, tb := pdf.GetDrawColor()
 	fr, fg, fb := pdf.GetFillColor()
 	txr, txg, txb := pdf.GetTextColor()
 
-	pdf.SetAutoPageBreak(false, breekMarge)
-	pdf.SetCellMargin(tabelCelvulling / 2)
-	pdf.SetLineWidth(tabelRand)
+	pdf.SetAutoPageBreak(false, breakMargin)
+	pdf.SetCellMargin(tablePadding / 2)
+	pdf.SetLineWidth(tableBorder)
 	pdf.SetDrawColor(0, 0, 0)
 	pdf.SetTextColor(0, 0, 0)
 
 	defer func() {
-		pdf.SetAutoPageBreak(autoBreek, breekMarge)
-		pdf.SetCellMargin(celmarge)
-		pdf.SetLineWidth(lijnbreedte)
+		pdf.SetAutoPageBreak(autoBreak, breakMargin)
+		pdf.SetCellMargin(cellMargin)
+		pdf.SetLineWidth(lineWidth)
 		pdf.SetDrawColor(tr, tg, tb)
 		pdf.SetFillColor(fr, fg, fb)
 		pdf.SetTextColor(txr, txg, txb)
-		v.zetX()
+		v.resetX()
 	}()
 
-	breedtes := v.kolombreedtes(rijen, kolommen)
-	kopIndex := -1
-	if len(rijen) > 0 && rijen[0].Header {
-		kopIndex = 0
+	widths := v.columnWidths(rows, columns)
+	headerIndex := -1
+	if len(rows) > 0 && rows[0].Header {
+		headerIndex = 0
 	}
 
-	for i := range rijen {
-		hoogte := v.rijhoogte(rijen[i], breedtes)
-		if !v.pastRij(hoogte) {
+	for i := range rows {
+		height := v.rowHeight(rows[i], widths)
+		if !v.rowFits(height) {
 			pdf.AddPage()
-			v.zetX()
-			if i != kopIndex && kopIndex >= 0 {
-				v.tekenRij(rijen[kopIndex], breedtes)
+			v.resetX()
+			if i != headerIndex && headerIndex >= 0 {
+				v.drawRow(rows[headerIndex], widths)
 			}
 		}
-		v.tekenRij(rijen[i], breedtes)
+		v.drawRow(rows[i], widths)
 	}
 }
 
-// aantalKolommen telt de kolommen van de breedste rij.
-func aantalKolommen(rijen []markdown.Row) int {
-	kolommen := 0
-	for _, rij := range rijen {
-		if len(rij.Cells) > kolommen {
-			kolommen = len(rij.Cells)
+// columnCount counts the columns of the widest row.
+func columnCount(rows []markdown.Row) int {
+	columns := 0
+	for _, row := range rows {
+		if len(row.Cells) > columns {
+			columns = len(row.Cells)
 		}
 	}
-	return kolommen
+	return columns
 }
 
-// celtekst voegt de stukken van een cel samen zodat er niets verloren gaat.
-func celtekst(cel markdown.Cell) string {
+// cellText joins the spans of a cell so that nothing is lost.
+func cellText(cell markdown.Cell) string {
 	var b strings.Builder
-	for _, stuk := range cel.Spans {
-		b.WriteString(stuk.Text)
+	for _, span := range cell.Spans {
+		b.WriteString(span.Text)
 	}
 	return b.String()
 }
 
-// stelCelfontIn kiest het font voor een cel: vet voor de kopregel, normaal voor data.
-func (v documentVel) stelCelfontIn(kop bool) {
-	stijl := ""
-	if kop {
-		stijl = "B"
+// setCellFont chooses the font for a cell: bold for the header row, normal for data.
+func (v documentCanvas) setCellFont(header bool) {
+	style := ""
+	if header {
+		style = "B"
 	}
-	v.d.pdf.SetFont("Helvetica", stijl, tabelFontGrootte)
+	v.d.pdf.SetFont("Helvetica", style, tableFontSize)
 }
 
-// kolombreedtes meet de breedste cel per kolom en schaalt zo nodig terug.
-func (v documentVel) kolombreedtes(rijen []markdown.Row, kolommen int) []float64 {
-	breedtes := make([]float64, kolommen)
-	for kolom := 0; kolom < kolommen; kolom++ {
-		breedte := tabelMinBreedte
-		for _, rij := range rijen {
-			if kolom >= len(rij.Cells) {
+// columnWidths measures the widest cell per column and scales down when needed.
+func (v documentCanvas) columnWidths(rows []markdown.Row, columns int) []float64 {
+	widths := make([]float64, columns)
+	for column := 0; column < columns; column++ {
+		width := tableMinWidth
+		for _, row := range rows {
+			if column >= len(row.Cells) {
 				continue
 			}
-			v.stelCelfontIn(rij.Header)
-			celbreedte := v.d.pdf.GetStringWidth(text.ToCP1252(celtekst(rij.Cells[kolom]))) + tabelCelvulling
-			if celbreedte > breedte {
-				breedte = celbreedte
+			v.setCellFont(row.Header)
+			cellWidth := v.d.pdf.GetStringWidth(text.ToCP1252(cellText(row.Cells[column]))) + tablePadding
+			if cellWidth > width {
+				width = cellWidth
 			}
 		}
-		breedtes[kolom] = breedte
+		widths[column] = width
 	}
 
-	som := 0.0
-	for _, breedte := range breedtes {
-		som += breedte
+	sum := 0.0
+	for _, width := range widths {
+		sum += width
 	}
-	if som > v.tekstbreedte() {
-		factor := v.tekstbreedte() / som
-		for i := range breedtes {
-			breedtes[i] *= factor
+	if sum > v.contentWidth() {
+		factor := v.contentWidth() / sum
+		for i := range widths {
+			widths[i] *= factor
 		}
 	}
-	return breedtes
+	return widths
 }
 
-// regelsVoor breekt celinhoud op woordgrens om binnen de kolombreedte.
-// De volle kolombreedte gaat erin: fpdf.SplitLines trekt zelf al tweemaal de
-// celmarge af (wmax = w - 2*cMargin), dus hier nog eens aftrekken breekt te vroeg af.
-func (v documentVel) regelsVoor(cel markdown.Cell, breedte float64) []string {
-	tekst := text.ToCP1252(celtekst(cel))
-	if tekst == "" {
+// linesFor wraps cell content at word boundaries to fit within the column width.
+// The full column width is passed in: fpdf.SplitLines already subtracts the
+// cell margin twice (wmax = w - 2*cMargin), so subtracting it here again wraps too early.
+func (v documentCanvas) linesFor(cell markdown.Cell, width float64) []string {
+	text := text.ToCP1252(cellText(cell))
+	if text == "" {
 		return nil
 	}
-	regels := v.d.pdf.SplitLines([]byte(tekst), breedte)
-	uit := make([]string, len(regels))
-	for i, regel := range regels {
-		uit[i] = string(regel)
+	lines := v.d.pdf.SplitLines([]byte(text), width)
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = string(line)
 	}
-	return uit
+	return out
 }
 
-// rijhoogte is de hoogte van de hoogste cel, met een minimum van 16 punt.
-func (v documentVel) rijhoogte(rij markdown.Row, breedtes []float64) float64 {
-	hoogte := tabelMinHoogte
-	for kolom, cel := range rij.Cells {
-		if kolom >= len(breedtes) {
+// rowHeight is the height of the tallest cell, with a minimum of 16 points.
+func (v documentCanvas) rowHeight(row markdown.Row, widths []float64) float64 {
+	height := tableMinHeight
+	for column, cell := range row.Cells {
+		if column >= len(widths) {
 			break
 		}
-		v.stelCelfontIn(rij.Header)
-		regels := v.regelsVoor(cel, breedtes[kolom])
-		celhoogte := float64(len(regels)) * tabelRegelhoogte
-		if celhoogte > hoogte {
-			hoogte = celhoogte
+		v.setCellFont(row.Header)
+		lines := v.linesFor(cell, widths[column])
+		cellHeight := float64(len(lines)) * tableLineHeight
+		if cellHeight > height {
+			height = cellHeight
 		}
 	}
-	return hoogte
+	return height
 }
 
-// paginaTekstHoogte is de hoogte die op één pagina beschikbaar is voor inhoud.
-func (v documentVel) paginaTekstHoogte() float64 {
-	_, paginaHoogte := v.d.pdf.GetPageSize()
-	_, boven, _, onder := v.d.pdf.GetMargins()
-	return paginaHoogte - boven - onder
+// pageContentHeight is the height available for content on one page.
+func (v documentCanvas) pageContentHeight() float64 {
+	_, pageHeight := v.d.pdf.GetPageSize()
+	_, top, _, bottom := v.d.pdf.GetMargins()
+	return pageHeight - top - bottom
 }
 
-// pastRij geeft aan of een rij nog op de huidige pagina past.
-func (v documentVel) pastRij(hoogte float64) bool {
-	_, paginaHoogte := v.d.pdf.GetPageSize()
-	_, _, _, bodem := v.d.pdf.GetMargins()
-	return v.d.pdf.GetY()+hoogte <= paginaHoogte-bodem
+// rowFits reports whether a row still fits on the current page.
+func (v documentCanvas) rowFits(height float64) bool {
+	_, pageHeight := v.d.pdf.GetPageSize()
+	_, _, _, bottom := v.d.pdf.GetMargins()
+	return v.d.pdf.GetY()+height <= pageHeight-bottom
 }
 
-// tekenRij tekent één rij op de huidige positie.
-func (v documentVel) tekenRij(rij markdown.Row, breedtes []float64) {
-	hoogte := v.rijhoogte(rij, breedtes)
-	x := marge + v.d.inspringing
+// drawRow draws one row at the current position.
+func (v documentCanvas) drawRow(row markdown.Row, widths []float64) {
+	height := v.rowHeight(row, widths)
+	x := margin + v.d.indent
 	y := v.d.pdf.GetY()
-	for kolom, cel := range rij.Cells {
-		if kolom >= len(breedtes) {
+	for column, cell := range row.Cells {
+		if column >= len(widths) {
 			break
 		}
-		v.tekenCel(cel, rij.Header, x, y, breedtes[kolom], hoogte)
-		x += breedtes[kolom]
+		v.drawCell(cell, row.Header, x, y, widths[column], height)
+		x += widths[column]
 	}
-	v.d.pdf.SetXY(marge+v.d.inspringing, y+hoogte)
+	v.d.pdf.SetXY(margin+v.d.indent, y+height)
 }
 
-// tekenCel tekent de achtergrond, rand en tekst van één cel.
-func (v documentVel) tekenCel(cel markdown.Cell, kop bool, x, y, breedte, hoogte float64) {
+// drawCell draws the background, border, and text of one cell.
+func (v documentCanvas) drawCell(cell markdown.Cell, header bool, x, y, width, height float64) {
 	pdf := v.d.pdf
-	v.stelCelfontIn(kop)
-	if kop {
-		pdf.SetFillColor(tabelGrijs, tabelGrijs, tabelGrijs)
-		pdf.Rect(x, y, breedte, hoogte, "FD")
+	v.setCellFont(header)
+	if header {
+		pdf.SetFillColor(tableGray, tableGray, tableGray)
+		pdf.Rect(x, y, width, height, "FD")
 	} else {
-		pdf.Rect(x, y, breedte, hoogte, "D")
+		pdf.Rect(x, y, width, height, "D")
 	}
-	regels := v.regelsVoor(cel, breedte)
-	for i, regel := range regels {
-		pdf.SetXY(x, y+float64(i)*tabelRegelhoogte)
-		pdf.CellFormat(breedte, tabelRegelhoogte, regel, "", 0, uitlijning(cel.Alignment), false, 0, "")
+	lines := v.linesFor(cell, width)
+	for i, line := range lines {
+		pdf.SetXY(x, y+float64(i)*tableLineHeight)
+		pdf.CellFormat(width, tableLineHeight, line, "", 0, alignment(cell.Alignment), false, 0, "")
 	}
 }
 
-// uitlijning vertaalt de markdown-uitlijning naar de fpdf-lettercodes.
-func uitlijning(u markdown.Alignment) string {
+// alignment translates the Markdown alignment to the fpdf letter codes.
+func alignment(u markdown.Alignment) string {
 	switch u {
 	case markdown.AlignCenter:
 		return "C"
@@ -327,10 +327,10 @@ func uitlijning(u markdown.Alignment) string {
 		return "L"
 	}
 }
-func (v documentVel) Streep() {
+func (v documentCanvas) Rule() {
 	y := v.d.pdf.GetY() + 3
-	v.d.pdf.Line(marge+v.d.inspringing, y, breedte-marge, y)
+	v.d.pdf.Line(margin+v.d.indent, y, width-margin, y)
 }
-func (v documentVel) Fout() error           { return v.d.pdf.Error() }
-func (v documentVel) zetX()                 { v.d.pdf.SetX(marge + v.d.inspringing) }
-func (v documentVel) tekstbreedte() float64 { return breedte - 2*marge - v.d.inspringing }
+func (v documentCanvas) Err() error            { return v.d.pdf.Error() }
+func (v documentCanvas) resetX()               { v.d.pdf.SetX(margin + v.d.indent) }
+func (v documentCanvas) contentWidth() float64 { return width - 2*margin - v.d.indent }

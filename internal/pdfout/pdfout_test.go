@@ -21,115 +21,115 @@ import (
 
 func TestDiagramPNG(t *testing.T) {
 	var pngBytes bytes.Buffer
-	pngAfbeelding := image.NewRGBA(image.Rect(0, 0, 40, 20))
-	pngAfbeelding.Set(0, 0, color.Black)
-	if err := png.Encode(&pngBytes, pngAfbeelding); err != nil {
+	pngImage := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	pngImage.Set(0, 0, color.Black)
+	if err := png.Encode(&pngBytes, pngImage); err != nil {
 		t.Fatal(err)
 	}
-	document := Nieuw()
-	if err := document.Vel().Diagram(pngBytes.Bytes()); err != nil {
+	document := New()
+	if err := document.Canvas().Diagram(pngBytes.Bytes()); err != nil {
 		t.Fatal(err)
 	}
-	pad := filepath.Join(t.TempDir(), "diagram.pdf")
-	if err := document.Schrijf(pad); err != nil {
+	path := filepath.Join(t.TempDir(), "diagram.pdf")
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(inhoud, []byte("/Subtype /Image")) {
+	if !bytes.Contains(content, []byte("/Subtype /Image")) {
 		t.Fatal("PDF bevat geen afbeelding")
 	}
 }
 
-func TestDiagramOngeldigePNGGeeftFout(t *testing.T) {
-	document := Nieuw()
-	if err := document.Vel().Diagram([]byte("geen PNG")); err == nil {
+func TestDiagramInvalidPNGReturnsError(t *testing.T) {
+	document := New()
+	if err := document.Canvas().Diagram([]byte("geen PNG")); err == nil {
 		t.Fatal("ongeldige PNG gaf geen fout")
 	}
 }
 
-func TestSchrijfPDF(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "alinea.pdf")
-	document := Nieuw()
-	if err := render.Teken([]markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "Een alinea."}}}}, document.Vel(), render.Opties{}); err != nil {
+func TestWritePDF(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alinea.pdf")
+	document := New()
+	if err := render.Draw([]markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "Een alinea."}}}}, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Schrijf(pad); err != nil {
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.HasPrefix(inhoud, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(inhoud), []byte("%%EOF")) || len(inhoud) <= 500 {
-		t.Fatalf("ongeldige PDF van %d bytes", len(inhoud))
+	if !bytes.HasPrefix(content, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(content), []byte("%%EOF")) || len(content) <= 500 {
+		t.Fatalf("ongeldige PDF van %d bytes", len(content))
 	}
 }
 
-func TestCP1252StaatInInhoudsstroom(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "tekens.pdf")
-	document := Nieuw()
-	blokken := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "café —"}}}}
-	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
+func TestCP1252IsInContentStream(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tekens.pdf")
+	document := New()
+	blocks := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "café —"}}}}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Schrijf(pad); err != nil {
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stroom := inhoudsstroom(t, inhoud)
-	if !bytes.Contains(stroom, []byte{0xe9}) {
-		t.Fatalf("cp1252-byte 0xe9 ontbreekt in % x", stroom)
+	stream := contentStream(t, content)
+	if !bytes.Contains(stream, []byte{0xe9}) {
+		t.Fatalf("cp1252-byte 0xe9 ontbreekt in % x", stream)
 	}
-	if bytes.Contains(stroom, []byte{0xc3, 0xa9}) {
-		t.Fatalf("UTF-8-bytes gevonden in % x", stroom)
+	if bytes.Contains(stream, []byte{0xc3, 0xa9}) {
+		t.Fatalf("UTF-8-bytes gevonden in % x", stream)
 	}
 }
 
-func TestLangLijstitemBlijftIngesprongen(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "lijst.pdf")
-	document := Nieuw()
-	blokken := []markdown.Block{
+func TestLongListItemStaysIndented(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lijst.pdf")
+	document := New()
+	blocks := []markdown.Block{
 		{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: strings.Repeat("een lang lijstitem ", 40)}}},
 		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "einde"}}},
 	}
-	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Schrijf(pad); err != nil {
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stroom := inhoudsstroom(t, inhoud)
-	kolommen := tekstkolommen(t, stroom)
-	if len(kolommen) < 4 {
-		t.Fatalf("te weinig tekstregels om terugloop te beoordelen: %q", stroom)
+	stream := contentStream(t, content)
+	columns := textColumns(t, stream)
+	if len(columns) < 4 {
+		t.Fatalf("te weinig tekstregels om terugloop te beoordelen: %q", stream)
 	}
-	// Eerste regel is de opsommingsbol, daarna de tekst van het item; alle
-	// vervolgregels horen onder die tekstkolom te hangen, niet onder de bol.
-	tekstkolom := kolommen[1]
-	for i, kolom := range kolommen[2 : len(kolommen)-1] {
-		if kolom != tekstkolom {
-			t.Fatalf("vervolgregel %d staat op %.2f, wil %.2f: %q", i+1, kolom, tekstkolom, stroom)
+	// The first line is the bullet, followed by the item text; all
+	// subsequent lines should hang below that text column, not below the bullet.
+	textColumn := columns[1]
+	for i, column := range columns[2 : len(columns)-1] {
+		if column != textColumn {
+			t.Fatalf("vervolgregel %d staat op %.2f, wil %.2f: %q", i+1, column, textColumn, stream)
 		}
 	}
-	if slot := kolommen[len(kolommen)-1]; slot >= kolommen[0] {
-		t.Fatalf("linkermarge is niet hersteld: alinea op %.2f, bol stond op %.2f", slot, kolommen[0])
+	if final := columns[len(columns)-1]; final >= columns[0] {
+		t.Fatalf("linkermarge is niet hersteld: alinea op %.2f, bol stond op %.2f", final, columns[0])
 	}
 }
 
-func TestTabelTekstStaatInInhoudsstroom(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "tabel.pdf")
-	document := Nieuw()
-	rijen := []markdown.Row{
+func TestTableTextIsInContentStream(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tabel.pdf")
+	document := New()
+	rows := []markdown.Row{
 		{Header: true, Cells: []markdown.Cell{
 			{Spans: []markdown.Span{{Text: "Naam"}}},
 			{Spans: []markdown.Span{{Text: "Waarde"}}},
@@ -143,177 +143,177 @@ func TestTabelTekstStaatInInhoudsstroom(t *testing.T) {
 			{Spans: []markdown.Span{{Text: "2"}}},
 		}},
 	}
-	document.Vel().Tabel(rijen)
-	if err := document.Schrijf(pad); err != nil {
+	document.Canvas().Table(rows)
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stroom := inhoudsstroom(t, inhoud)
-	if !bytes.Contains(stroom, []byte("Naam")) {
-		t.Fatalf("kopregel ontbreekt in %q", stroom)
+	stream := contentStream(t, content)
+	if !bytes.Contains(stream, []byte("Naam")) {
+		t.Fatalf("kopregel ontbreekt in %q", stream)
 	}
-	if !bytes.Contains(stroom, []byte("twee")) {
-		t.Fatalf("laatste datarij ontbreekt in %q", stroom)
+	if !bytes.Contains(stream, []byte("twee")) {
+		t.Fatalf("laatste datarij ontbreekt in %q", stream)
 	}
 }
 
-func TestTabelTeBreedSchrijftZonderFout(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "breed.pdf")
-	document := Nieuw()
-	rijen := []markdown.Row{
+func TestTableTooWideWritesWithoutError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "breed.pdf")
+	document := New()
+	rows := []markdown.Row{
 		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("kop ", 200)}}}}},
 		{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("breed ", 200)}}}}},
 	}
-	document.Vel().Tabel(rijen)
-	if fout := document.Vel().Fout(); fout != nil {
-		t.Fatalf("Fout() na tekenen: %v", fout)
+	document.Canvas().Table(rows)
+	if err := document.Canvas().Err(); err != nil {
+		t.Fatalf("Fout() na tekenen: %v", err)
 	}
-	if err := document.Schrijf(pad); err != nil {
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	if fout := document.Vel().Fout(); fout != nil {
-		t.Fatalf("Fout() na schrijven: %v", fout)
+	if err := document.Canvas().Err(); err != nil {
+		t.Fatalf("Fout() na schrijven: %v", err)
 	}
 }
 
-func TestTabelOverPaginasHerhaaltKopregel(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "paginas.pdf")
-	document := Nieuw()
-	rijen := []markdown.Row{
+func TestTableRepeatsHeaderAcrossPages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "paginas.pdf")
+	document := New()
+	rows := []markdown.Row{
 		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "Koptekst"}}}}},
 	}
 	for i := 0; i < 60; i++ {
-		rijen = append(rijen, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: fmt.Sprintf("rij%d", i)}}}}})
+		rows = append(rows, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: fmt.Sprintf("rij%d", i)}}}}})
 	}
-	document.Vel().Tabel(rijen)
-	if err := document.Schrijf(pad); err != nil {
+	document.Canvas().Table(rows)
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aantal := paginaAantal(inhoud); aantal <= 1 {
-		t.Fatalf("PDF telt %d pagina's, wil meer dan één", aantal)
+	if count := pageCount(content); count <= 1 {
+		t.Fatalf("PDF telt %d pagina's, wil meer dan één", count)
 	}
-	kopteksten := 0
-	for _, stroom := range inhoudsstromen(t, inhoud) {
-		kopteksten += bytes.Count(stroom, []byte("Koptekst"))
+	headers := 0
+	for _, stream := range contentStreams(t, content) {
+		headers += bytes.Count(stream, []byte("Koptekst"))
 	}
-	if kopteksten <= 1 {
-		t.Fatalf("kopregel komt %d keer voor, wil vaker dan één", kopteksten)
+	if headers <= 1 {
+		t.Fatalf("kopregel komt %d keer voor, wil vaker dan één", headers)
 	}
 }
 
-// tekstkolommen leest de x-positie van elke tekstplaatsing uit een inhoudsstroom.
-func tekstkolommen(t *testing.T, stroom []byte) []float64 {
+// textColumns reads the x position of every text placement from a content stream.
+func textColumns(t *testing.T, stream []byte) []float64 {
 	t.Helper()
-	var kolommen []float64
-	for _, treffer := range regexp.MustCompile(`BT (\d+\.\d+) \d+\.\d+ Td`).FindAllSubmatch(stroom, -1) {
-		x, err := strconv.ParseFloat(string(treffer[1]), 64)
+	var columns []float64
+	for _, match := range regexp.MustCompile(`BT (\d+\.\d+) \d+\.\d+ Td`).FindAllSubmatch(stream, -1) {
+		x, err := strconv.ParseFloat(string(match[1]), 64)
 		if err != nil {
 			t.Fatal(err)
 		}
-		kolommen = append(kolommen, x)
+		columns = append(columns, x)
 	}
-	return kolommen
+	return columns
 }
 
-// inhoudsstroom pakt de eerste inhoudsstroom van een PDF uit.
-func inhoudsstroom(t *testing.T, pdf []byte) []byte {
+// contentStream extracts the first content stream from a PDF.
+func contentStream(t *testing.T, pdf []byte) []byte {
 	t.Helper()
-	stromen := inhoudsstromen(t, pdf)
+	stromen := contentStreams(t, pdf)
 	return stromen[0]
 }
 
-// inhoudsstromen pakt alle zlib-inhoudsstromen van een PDF uit.
-func inhoudsstromen(t *testing.T, pdf []byte) [][]byte {
+// contentStreams extracts all zlib content streams from a PDF.
+func contentStreams(t *testing.T, pdf []byte) [][]byte {
 	t.Helper()
-	var uit [][]byte
-	rest := pdf
+	var out [][]byte
+	remaining := pdf
 	for {
-		begin := bytes.Index(rest, []byte("stream\n"))
-		if begin < 0 {
+		start := bytes.Index(remaining, []byte("stream\n"))
+		if start < 0 {
 			break
 		}
-		begin += len("stream\n")
-		einde := bytes.Index(rest[begin:], []byte("\nendstream"))
-		if einde < 0 {
+		start += len("stream\n")
+		end := bytes.Index(remaining[start:], []byte("\nendstream"))
+		if end < 0 {
 			break
 		}
-		lezer, err := zlib.NewReader(bytes.NewReader(rest[begin : begin+einde]))
+		reader, err := zlib.NewReader(bytes.NewReader(remaining[start : start+end]))
 		if err != nil {
 			t.Fatal(err)
 		}
-		stroom, err := io.ReadAll(lezer)
+		stream, err := io.ReadAll(reader)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := lezer.Close(); err != nil {
+		if err := reader.Close(); err != nil {
 			t.Fatal(err)
 		}
-		uit = append(uit, stroom)
-		rest = rest[begin+einde+len("\nendstream"):]
+		out = append(out, stream)
+		remaining = remaining[start+end+len("\nendstream"):]
 	}
-	if len(uit) == 0 {
+	if len(out) == 0 {
 		t.Fatal("geen inhoudsstromen gevonden")
 	}
-	return uit
+	return out
 }
 
-// paginaAantal telt het aantal pagina-objecten in een PDF.
-func paginaAantal(pdf []byte) int {
-	tekst := string(pdf)
-	return strings.Count(tekst, "/Type /Page") - strings.Count(tekst, "/Type /Pages")
+// pageCount counts the page objects in a PDF.
+func pageCount(pdf []byte) int {
+	text := string(pdf)
+	return strings.Count(text, "/Type /Page") - strings.Count(text, "/Type /Pages")
 }
 
-func TestRenderREADMENaarPDF(t *testing.T) {
-	bron, err := os.ReadFile(filepath.Join("..", "..", "testdata", "README.md"))
+func TestRenderREADMEToPDF(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	blokken, err := markdown.Parse(bron)
+	blocks, err := markdown.Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pad := filepath.Join(t.TempDir(), "readme.pdf")
-	document := Nieuw()
-	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
+	path := filepath.Join(t.TempDir(), "readme.pdf")
+	document := New()
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Schrijf(pad); err != nil {
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(pad)
+	info, err := os.Stat(path)
 	if err != nil || info.Size() == 0 {
 		t.Fatalf("uitvoer = %v, %v", info, err)
 	}
 }
 
-func TestDiagramHogerDanEenPaginaWordtGeschaald(t *testing.T) {
-	document := Nieuw()
-	// Een smal en zeer hoog plaatje: op de volle tekstbreedte zou het ruim
-	// hoger worden dan een pagina.
-	smalEnHoog := image.NewRGBA(image.Rect(0, 0, 100, 900))
+func TestDiagramTallerThanOnePageIsScaled(t *testing.T) {
+	document := New()
+	// A narrow and very tall image: at the full text width it would become well
+	// taller than a page.
+	narrowAndTall := image.NewRGBA(image.Rect(0, 0, 100, 900))
 	var pngBytes bytes.Buffer
-	if err := png.Encode(&pngBytes, smalEnHoog); err != nil {
+	if err := png.Encode(&pngBytes, narrowAndTall); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Vel().Diagram(pngBytes.Bytes()); err != nil {
+	if err := document.Canvas().Diagram(pngBytes.Bytes()); err != nil {
 		t.Fatal(err)
 	}
-	pad := filepath.Join(t.TempDir(), "diagram.pdf")
-	if err := document.Schrijf(pad); err != nil {
+	path := filepath.Join(t.TempDir(), "diagram.pdf")
+	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(pad)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if paginaAantal(inhoud) != 1 {
-		t.Fatalf("diagram beslaat %d pagina's, wil er één", paginaAantal(inhoud))
+	if pageCount(content) != 1 {
+		t.Fatalf("diagram beslaat %d pagina's, wil er één", pageCount(content))
 	}
 }

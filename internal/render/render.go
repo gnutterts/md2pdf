@@ -1,4 +1,4 @@
-// Package render tekent het documentmodel op een Vel.
+// Package render draws the document model on a Canvas.
 package render
 
 import (
@@ -11,149 +11,149 @@ import (
 	"github.com/gnutterts/md2pdf/internal/mermaid"
 )
 
-// Vel is het abstracte tekenvlak voor een PDF-document.
-type Vel interface {
-	NieuwePagina()
-	Stijl(familie string, vet, cursief bool, grootte float64)
-	Tekst(tekst string)
-	Link(tekst, url string)
-	Regeleinde(hoogte float64)
-	Inspringen(punten float64)
-	// HangendInspringen laat teruglopende regels uitlijnen op de huidige kolom
-	// in plaats van op de inspringing van het blok, zodat de tekst van een
-	// lijstitem onder zichzelf doorloopt en niet onder de opsommingsbol.
-	HangendInspringen()
-	Codeblok(regels []string)
-	Streep()
-	// Tabel tekent een volledige tabel: het vel bepaalt kolombreedtes en
-	// paginabreuken, omdat alleen daar de fontmetrieken bekend zijn.
-	Tabel(rijen []markdown.Row)
-	// Diagram tekent een PNG op de volle tekstbreedte, met behoud van
-	// verhouding, en begint op een nieuwe pagina als het niet meer past.
+// Canvas is the abstract drawing surface for a PDF document.
+type Canvas interface {
+	NewPage()
+	Style(family string, bold, italic bool, size float64)
+	Text(text string)
+	Link(text, url string)
+	LineBreak(height float64)
+	Indent(punten float64)
+	// HangingIndent aligns wrapped lines with the current column
+	// instead of the indentation of the block, so that the text of a
+	// list item continues below itself and not below the bullet.
+	HangingIndent()
+	CodeBlock(lines []string)
+	Rule()
+	// Table draws a complete table: the canvas determines column widths and
+	// page breaks, because only there are the font metrics known.
+	Table(rows []markdown.Row)
+	// Diagram draws a PNG at the full text width, preserving
+	// proportions, and starts on a new page when it no longer fits.
 	Diagram(png []byte) error
-	Fout() error
+	Err() error
 }
 
-const regelhoogte = 15.0
+const lineHeight = 15.0
 
-type basisstijl struct {
-	familie      string
-	grootte      float64
-	vet, cursief bool
+type baseStyle struct {
+	family       string
+	size         float64
+	bold, italic bool
 }
 
-func hoogteVoor(grootte float64) float64 {
-	hoogte := math.Round(grootte*1.35*2) / 2
-	return math.Max(regelhoogte, hoogte)
+func heightFor(size float64) float64 {
+	height := math.Round(size*1.35*2) / 2
+	return math.Max(lineHeight, height)
 }
 
-// Opties bepaalt optioneel hoe diagrammen worden gerenderd.
-type Opties struct {
-	Mermaid   mermaid.Renderer
-	Waarschuw func(melding string)
+// Options optionally determines how diagrams are rendered.
+type Options struct {
+	Mermaid mermaid.Renderer
+	Warn    func(message string)
 }
 
-// Teken tekent blokken in hun oorspronkelijke volgorde.
-func Teken(blokken []markdown.Block, vel Vel, opties Opties) error {
-	eerste := true
-	for _, blok := range blokken {
-		switch blok.Kind {
+// Draw draws blocks in their original order.
+func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
+	first := true
+	for _, block := range blocks {
+		switch block.Kind {
 		case markdown.Heading:
-			if !eerste {
-				vel.Regeleinde(12)
+			if !first {
+				canvas.LineBreak(12)
 			}
-			basis := basisstijl{familie: "Helvetica", grootte: 11, vet: true}
-			if blok.Level == 1 {
-				basis.grootte = 20
+			base := baseStyle{family: "Helvetica", size: 11, bold: true}
+			if block.Level == 1 {
+				base.size = 20
 			}
-			if blok.Level == 2 {
-				basis.grootte = 16
+			if block.Level == 2 {
+				base.size = 16
 			}
-			if blok.Level == 3 {
-				basis.grootte = 13
+			if block.Level == 3 {
+				base.size = 13
 			}
-			vel.Stijl(basis.familie, basis.vet, basis.cursief, basis.grootte)
-			stukken(vel, blok.Spans, basis)
-			vel.Regeleinde(hoogteVoor(basis.grootte))
-			vel.Regeleinde(6)
+			canvas.Style(base.family, base.bold, base.italic, base.size)
+			spans(canvas, block.Spans, base)
+			canvas.LineBreak(heightFor(base.size))
+			canvas.LineBreak(6)
 		case markdown.Paragraph:
-			basis := basisstijl{familie: "Helvetica", grootte: 11}
-			vel.Stijl(basis.familie, basis.vet, basis.cursief, basis.grootte)
-			stukken(vel, blok.Spans, basis)
-			vel.Regeleinde(hoogteVoor(basis.grootte))
-			vel.Regeleinde(6)
+			base := baseStyle{family: "Helvetica", size: 11}
+			canvas.Style(base.family, base.bold, base.italic, base.size)
+			spans(canvas, block.Spans, base)
+			canvas.LineBreak(heightFor(base.size))
+			canvas.LineBreak(6)
 		case markdown.ListItem:
-			vel.Inspringen(float64(blok.Depth) * 14)
-			basis := basisstijl{familie: "Helvetica", grootte: 11}
-			vel.Stijl(basis.familie, basis.vet, basis.cursief, basis.grootte)
-			if blok.Ordered {
-				vel.Tekst(strconv.Itoa(blok.Number) + ". ")
+			canvas.Indent(float64(block.Depth) * 14)
+			base := baseStyle{family: "Helvetica", size: 11}
+			canvas.Style(base.family, base.bold, base.italic, base.size)
+			if block.Ordered {
+				canvas.Text(strconv.Itoa(block.Number) + ". ")
 			} else {
-				vel.Tekst("• ")
+				canvas.Text("• ")
 			}
-			vel.HangendInspringen()
-			stukken(vel, blok.Spans, basis)
-			vel.Regeleinde(hoogteVoor(basis.grootte))
-			vel.Inspringen(-float64(blok.Depth) * 14)
+			canvas.HangingIndent()
+			spans(canvas, block.Spans, base)
+			canvas.LineBreak(heightFor(base.size))
+			canvas.Indent(-float64(block.Depth) * 14)
 		case markdown.CodeBlock:
-			if blok.Language == "mermaid" && opties.Mermaid.Available() {
-				png, err := opties.Mermaid.ToPNG(strings.Join(blok.Lines, "\n"))
+			if block.Language == "mermaid" && options.Mermaid.Available() {
+				png, err := options.Mermaid.ToPNG(strings.Join(block.Lines, "\n"))
 				if err == nil {
-					err = vel.Diagram(png)
+					err = canvas.Diagram(png)
 				}
 				if err == nil {
-					vel.Regeleinde(6)
+					canvas.LineBreak(6)
 					break
 				}
-				waarschuw(opties, fmt.Sprintf("mermaid-diagram kon niet worden getekend: %v", err))
+				warn(options, fmt.Sprintf("mermaid-diagram kon niet worden getekend: %v", err))
 			}
-			tekenCodeblok(vel, blok.Lines)
+			drawCodeBlock(canvas, block.Lines)
 		case markdown.Quote:
-			vel.Inspringen(14)
-			basis := basisstijl{familie: "Helvetica", grootte: 11, cursief: true}
-			vel.Stijl(basis.familie, basis.vet, basis.cursief, basis.grootte)
-			stukken(vel, blok.Spans, basis)
-			vel.Regeleinde(hoogteVoor(basis.grootte))
-			vel.Inspringen(-14)
-			vel.Regeleinde(6)
+			canvas.Indent(14)
+			base := baseStyle{family: "Helvetica", size: 11, italic: true}
+			canvas.Style(base.family, base.bold, base.italic, base.size)
+			spans(canvas, block.Spans, base)
+			canvas.LineBreak(heightFor(base.size))
+			canvas.Indent(-14)
+			canvas.LineBreak(6)
 		case markdown.Rule:
-			vel.Streep()
-			vel.Regeleinde(6)
+			canvas.Rule()
+			canvas.LineBreak(6)
 		case markdown.Table:
-			vel.Tabel(blok.Rows)
-			vel.Regeleinde(6)
+			canvas.Table(block.Rows)
+			canvas.LineBreak(6)
 		}
-		eerste = false
+		first = false
 	}
-	return vel.Fout()
+	return canvas.Err()
 }
 
-func tekenCodeblok(vel Vel, regels []string) {
-	vel.Inspringen(10)
-	vel.Stijl("Courier", false, false, 9.5)
-	vel.Codeblok(regels)
-	vel.Inspringen(-10)
-	vel.Regeleinde(6)
+func drawCodeBlock(canvas Canvas, lines []string) {
+	canvas.Indent(10)
+	canvas.Style("Courier", false, false, 9.5)
+	canvas.CodeBlock(lines)
+	canvas.Indent(-10)
+	canvas.LineBreak(6)
 }
 
-func waarschuw(opties Opties, melding string) {
-	if opties.Waarschuw != nil {
-		opties.Waarschuw(melding)
+func warn(options Options, message string) {
+	if options.Warn != nil {
+		options.Warn(message)
 	}
 }
 
-func stukken(vel Vel, stukken []markdown.Span, basis basisstijl) {
-	for _, stuk := range stukken {
-		familie, grootte := basis.familie, basis.grootte
-		if stuk.Code {
-			familie = "Courier"
-			grootte = math.Round(basis.grootte*0.85*2) / 2
+func spans(canvas Canvas, spans []markdown.Span, base baseStyle) {
+	for _, span := range spans {
+		family, size := base.family, base.size
+		if span.Code {
+			family = "Courier"
+			size = math.Round(base.size*0.85*2) / 2
 		}
-		vel.Stijl(familie, basis.vet || stuk.Bold, basis.cursief || stuk.Italic, grootte)
-		if stuk.URL != "" {
-			vel.Link(stuk.Text, stuk.URL)
+		canvas.Style(family, base.bold || span.Bold, base.italic || span.Italic, size)
+		if span.URL != "" {
+			canvas.Link(span.Text, span.URL)
 		} else {
-			vel.Tekst(stuk.Text)
+			canvas.Text(span.Text)
 		}
 	}
 }

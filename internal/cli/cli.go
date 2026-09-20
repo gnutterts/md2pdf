@@ -1,4 +1,4 @@
-// Package cli maakt een uitvoerplan voor md2pdf.
+// Package cli creates an output plan for md2pdf.
 package cli
 
 import (
@@ -10,117 +10,117 @@ import (
 	"strings"
 )
 
-// Modus bepaalt hoe de opgegeven invoer wordt verwerkt.
-type Modus int
+// Mode determines how the supplied input is processed.
+type Mode int
 
 const (
-	// ModusEnkel maakt één PDF van één bestand.
-	ModusEnkel Modus = iota
-	// ModusSamengevoegd maakt één PDF van alle Markdown-bestanden in een map.
-	ModusSamengevoegd
-	// ModusLos maakt één PDF per Markdown-bestand in een map.
-	ModusLos
+	// ModeSingle creates one PDF from one file.
+	ModeSingle Mode = iota
+	// ModeMerged creates one PDF from all Markdown files in a directory.
+	ModeMerged
+	// ModeSeparate creates one PDF per Markdown file in a directory.
+	ModeSeparate
 )
 
-// Taak beschrijft bronnen en hun doel.
-type Taak struct {
-	Bronnen []string
-	Doel    string
+// Task describes sources and their target.
+type Task struct {
+	Sources []string
+	Target  string
 }
 
-// Plan is de volledige, geordende verwerking.
+// Plan is the complete, ordered processing.
 type Plan struct {
-	Modus   Modus
-	Taken   []Taak
+	Mode    Mode
+	Tasks   []Task
 	Mermaid string
 }
 
-// Bestandssysteem bevat de leesbewerkingen die voor plannen nodig zijn.
-type Bestandssysteem interface {
-	Bestaat(pad string) (isMap bool, err error)
-	LeesMap(pad string) ([]string, error)
+// FileSystem contains the read operations needed for planning.
+type FileSystem interface {
+	Stat(path string) (isDir bool, err error)
+	ReadDir(path string) ([]string, error)
 }
 
-// OSBestandssysteem gebruikt het lokale bestandssysteem.
-type OSBestandssysteem struct{}
+// OSFileSystem uses the local file system.
+type OSFileSystem struct{}
 
-// Bestaat meldt of pad een map is.
-func (OSBestandssysteem) Bestaat(pad string) (bool, error) {
-	info, err := os.Stat(pad)
+// Stat reports whether path is a directory.
+func (OSFileSystem) Stat(path string) (bool, error) {
+	info, err := os.Stat(path)
 	if err != nil {
 		return false, err
 	}
 	return info.IsDir(), nil
 }
 
-// LeesMap leest de namen direct in een map.
-func (OSBestandssysteem) LeesMap(pad string) ([]string, error) {
-	items, err := os.ReadDir(pad)
+// ReadDir reads the names directly in a directory.
+func (OSFileSystem) ReadDir(path string) ([]string, error) {
+	items, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
-	namen := make([]string, len(items))
+	names := make([]string, len(items))
 	for i, item := range items {
-		namen[i] = item.Name()
+		names[i] = item.Name()
 	}
-	return namen, nil
+	return names, nil
 }
 
 var (
-	// ErrHulp vraagt de entrypoint om de gebruikstekst af te drukken.
-	ErrHulp = errors.New("hulp gevraagd")
-	// ErrVersie vraagt de entrypoint om de versie af te drukken.
-	ErrVersie = errors.New("versie gevraagd")
+	// ErrHelp asks the entry point to print the usage text.
+	ErrHelp = errors.New("hulp gevraagd")
+	// ErrVersion asks the entry point to print the version.
+	ErrVersion = errors.New("versie gevraagd")
 )
 
-// Gebruik is de korte gebruikstekst voor de opdracht.
-const Gebruik = "Gebruik: md2pdf [-o pad] [--los|-l] [--mermaid pad] <bestand-of-map>"
+// Usage is the short usage text for the command.
+const Usage = "Gebruik: md2pdf [-o pad] [--los|-l] [--mermaid pad] <bestand-of-map>"
 
-// Plannen zet argumenten om in een volledig uitvoerplan.
-func Plannen(args []string, fs Bestandssysteem) (Plan, error) {
-	los, uitvoer, mermaid, posities, err := ontleed(args)
+// Parse turns arguments into a complete output plan.
+func Parse(args []string, fs FileSystem) (Plan, error) {
+	separate, output, mermaid, positions, err := parseArgs(args)
 	if err != nil {
 		return Plan{}, err
 	}
-	if len(posities) == 0 {
-		return Plan{}, fmt.Errorf("geen invoer opgegeven\n%s", Gebruik)
+	if len(positions) == 0 {
+		return Plan{}, fmt.Errorf("geen invoer opgegeven\n%s", Usage)
 	}
-	if len(posities) != 1 {
+	if len(positions) != 1 {
 		return Plan{}, errors.New("precies één invoerpad is vereist")
 	}
 
-	invoer := posities[0]
-	isMap, err := fs.Bestaat(invoer)
+	input := positions[0]
+	isDir, err := fs.Stat(input)
 	if err != nil {
-		return Plan{}, fmt.Errorf("kan %q niet lezen: %w", invoer, err)
+		return Plan{}, fmt.Errorf("kan %q niet lezen: %w", input, err)
 	}
-	if !isMap {
-		return planBestand(invoer, uitvoer, mermaid, los, fs)
+	if !isDir {
+		return planFile(input, output, mermaid, separate, fs)
 	}
-	return planMap(invoer, uitvoer, mermaid, los, fs)
+	return planDir(input, output, mermaid, separate, fs)
 }
 
-// ontleed splitst vlaggen van positionele argumenten. ErrHulp en ErrVersie
-// komen als fout terug; de aanroeper herkent ze met errors.Is.
-func ontleed(args []string) (bool, string, string, []string, error) {
-	var los bool
-	var uitvoer, mermaid string
-	var posities []string
+// parseArgs separates flags from positional arguments. ErrHelp and ErrVersion
+// are returned as errors; the caller recognizes them with errors.Is.
+func parseArgs(args []string) (bool, string, string, []string, error) {
+	var separate bool
+	var output, mermaid string
+	var positions []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
 		case "-h", "--help":
-			return false, "", "", nil, ErrHulp
+			return false, "", "", nil, ErrHelp
 		case "--version":
-			return false, "", "", nil, ErrVersie
+			return false, "", "", nil, ErrVersion
 		case "--los", "-l":
-			los = true
+			separate = true
 		case "-o":
 			if i+1 == len(args) {
 				return false, "", "", nil, errors.New("-o verwacht een pad")
 			}
 			i++
-			uitvoer = args[i]
+			output = args[i]
 		case "--mermaid":
 			if i+1 == len(args) {
 				return false, "", "", nil, errors.New("--mermaid verwacht een pad")
@@ -128,114 +128,114 @@ func ontleed(args []string) (bool, string, string, []string, error) {
 			i++
 			mermaid = args[i]
 		case "--":
-			posities = append(posities, args[i+1:]...)
+			positions = append(positions, args[i+1:]...)
 			i = len(args)
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return false, "", "", nil, fmt.Errorf("onbekende vlag: %s", arg)
 			}
-			posities = append(posities, arg)
+			positions = append(positions, arg)
 		}
 	}
-	return los, uitvoer, mermaid, posities, nil
+	return separate, output, mermaid, positions, nil
 }
 
-func planBestand(invoer, uitvoer, mermaid string, los bool, fs Bestandssysteem) (Plan, error) {
-	if los {
+func planFile(input, output, mermaid string, separate bool, fs FileSystem) (Plan, error) {
+	if separate {
 		return Plan{}, errors.New("--los werkt alleen op een map")
 	}
-	if uitvoer == "" {
-		uitvoer = pdfNaam(invoer)
-	} else if err := bestandDoel(uitvoer, fs); err != nil {
+	if output == "" {
+		output = pdfName(input)
+	} else if err := fileTarget(output, fs); err != nil {
 		return Plan{}, err
 	}
-	return Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{invoer}, Doel: uitvoer}}, Mermaid: mermaid}, nil
+	return Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{input}, Target: output}}, Mermaid: mermaid}, nil
 }
 
-func planMap(invoer, uitvoer, mermaid string, los bool, fs Bestandssysteem) (Plan, error) {
-	bronnen, err := markdownBestanden(invoer, fs)
+func planDir(input, output, mermaid string, separate bool, fs FileSystem) (Plan, error) {
+	sources, err := markdownFiles(input, fs)
 	if err != nil {
 		return Plan{}, err
 	}
-	if los {
-		if uitvoer != "" {
-			if err := mapDoel(uitvoer, fs); err != nil {
+	if separate {
+		if output != "" {
+			if err := dirTarget(output, fs); err != nil {
 				return Plan{}, err
 			}
 		}
-		taken := make([]Taak, len(bronnen))
-		for i, bron := range bronnen {
-			doel := pdfNaam(bron)
-			if uitvoer != "" {
-				doel = filepath.Join(uitvoer, filepath.Base(doel))
+		tasks := make([]Task, len(sources))
+		for i, source := range sources {
+			target := pdfName(source)
+			if output != "" {
+				target = filepath.Join(output, filepath.Base(target))
 			}
-			taken[i] = Taak{Bronnen: []string{bron}, Doel: doel}
+			tasks[i] = Task{Sources: []string{source}, Target: target}
 		}
-		return Plan{Modus: ModusLos, Taken: taken, Mermaid: mermaid}, nil
+		return Plan{Mode: ModeSeparate, Tasks: tasks, Mermaid: mermaid}, nil
 	}
-	if uitvoer == "" {
-		uitvoer = filepath.Clean(invoer) + ".pdf"
-	} else if err := bestandDoel(uitvoer, fs); err != nil {
+	if output == "" {
+		output = filepath.Clean(input) + ".pdf"
+	} else if err := fileTarget(output, fs); err != nil {
 		return Plan{}, err
 	}
-	return Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: bronnen, Doel: uitvoer}}, Mermaid: mermaid}, nil
+	return Plan{Mode: ModeMerged, Tasks: []Task{{Sources: sources, Target: output}}, Mermaid: mermaid}, nil
 }
 
-func markdownBestanden(mapnaam string, fs Bestandssysteem) ([]string, error) {
-	namen, err := fs.LeesMap(mapnaam)
+func markdownFiles(dirName string, fs FileSystem) ([]string, error) {
+	names, err := fs.ReadDir(dirName)
 	if err != nil {
-		return nil, fmt.Errorf("kan map %q niet lezen: %w", mapnaam, err)
+		return nil, fmt.Errorf("kan map %q niet lezen: %w", dirName, err)
 	}
 	var markdown []string
-	var heeftMarkdown bool
-	for _, naam := range namen {
-		if strings.HasSuffix(strings.ToLower(naam), ".md") {
-			heeftMarkdown = true
-			if !strings.HasPrefix(naam, "_") {
-				markdown = append(markdown, naam)
+	var hasMarkdown bool
+	for _, name := range names {
+		if strings.HasSuffix(strings.ToLower(name), ".md") {
+			hasMarkdown = true
+			if !strings.HasPrefix(name, "_") {
+				markdown = append(markdown, name)
 			}
 		}
 	}
 	sort.Strings(markdown)
 	if len(markdown) == 0 {
-		if heeftMarkdown {
-			return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)", mapnaam)
+		if hasMarkdown {
+			return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)", dirName)
 		}
-		return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden", mapnaam)
+		return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden", dirName)
 	}
-	bronnen := make([]string, len(markdown))
-	for i, naam := range markdown {
-		bronnen[i] = filepath.Join(mapnaam, naam)
+	sources := make([]string, len(markdown))
+	for i, name := range markdown {
+		sources[i] = filepath.Join(dirName, name)
 	}
-	return bronnen, nil
+	return sources, nil
 }
 
-func bestandDoel(doel string, fs Bestandssysteem) error {
-	isMap, err := fs.Bestaat(doel)
-	if err == nil && isMap {
+func fileTarget(target string, fs FileSystem) error {
+	isDir, err := fs.Stat(target)
+	if err == nil && isDir {
 		return errors.New("-o verwijst naar een map, maar hier is een bestandsnaam nodig")
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("kan uitvoerdoel %q niet lezen: %w", doel, err)
+		return fmt.Errorf("kan uitvoerdoel %q niet lezen: %w", target, err)
 	}
 	return nil
 }
 
-func mapDoel(doel string, fs Bestandssysteem) error {
-	isMap, err := fs.Bestaat(doel)
-	if err == nil && !isMap {
+func dirTarget(target string, fs FileSystem) error {
+	isDir, err := fs.Stat(target)
+	if err == nil && !isDir {
 		return errors.New("-o verwijst naar een bestand, maar bij --los is een map nodig")
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("kan uitvoerdoel %q niet lezen: %w", doel, err)
+		return fmt.Errorf("kan uitvoerdoel %q niet lezen: %w", target, err)
 	}
 	return nil
 }
 
-func pdfNaam(bron string) string {
-	extensie := filepath.Ext(bron)
-	if strings.EqualFold(extensie, ".md") {
-		return strings.TrimSuffix(bron, extensie) + ".pdf"
+func pdfName(source string) string {
+	extension := filepath.Ext(source)
+	if strings.EqualFold(extension, ".md") {
+		return strings.TrimSuffix(source, extension) + ".pdf"
 	}
-	return bron + ".pdf"
+	return source + ".pdf"
 }

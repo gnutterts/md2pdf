@@ -9,74 +9,74 @@ import (
 	"testing"
 )
 
-type nepBestandssysteem struct {
-	paden  map[string]bool
-	mappen map[string][]string
-	fouten map[string]error
+type fakeFileSystem struct {
+	paths  map[string]bool
+	dirs   map[string][]string
+	errors map[string]error
 }
 
-func (n nepBestandssysteem) Bestaat(pad string) (bool, error) {
-	if err, ok := n.fouten[pad]; ok {
+func (n fakeFileSystem) Stat(path string) (bool, error) {
+	if err, ok := n.errors[path]; ok {
 		return false, err
 	}
-	isMap, ok := n.paden[pad]
+	isDir, ok := n.paths[path]
 	if !ok {
 		return false, os.ErrNotExist
 	}
-	return isMap, nil
+	return isDir, nil
 }
 
-func (n nepBestandssysteem) LeesMap(pad string) ([]string, error) {
-	if err, ok := n.fouten[pad]; ok {
+func (n fakeFileSystem) ReadDir(path string) ([]string, error) {
+	if err, ok := n.errors[path]; ok {
 		return nil, err
 	}
-	inhoud, ok := n.mappen[pad]
+	content, ok := n.dirs[path]
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	return inhoud, nil
+	return content, nil
 }
 
-func nieuwNepFS() nepBestandssysteem {
-	return nepBestandssysteem{
-		paden: map[string]bool{"boek.md": false, "notitie.txt": false, "_Footer.md": false, "wiki": true, "wiki/": true, "leeg": true, "navigatie": true, "doelmap": true, "doel.pdf": false},
-		mappen: map[string][]string{
+func newFakeFS() fakeFileSystem {
+	return fakeFileSystem{
+		paths: map[string]bool{"boek.md": false, "notitie.txt": false, "_Footer.md": false, "wiki": true, "wiki/": true, "leeg": true, "navigatie": true, "doelmap": true, "doel.pdf": false},
+		dirs: map[string][]string{
 			"wiki":      {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
 			"wiki/":     {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
 			"leeg":      {"tekst.txt"},
 			"navigatie": {"_Footer.md", "_Sidebar.MD"},
 		},
-		fouten: map[string]error{},
+		errors: map[string]error{},
 	}
 }
 
-func TestPlannenModiEnDoelen(t *testing.T) {
-	fs := nieuwNepFS()
+func TestParseModesAndTargets(t *testing.T) {
+	fs := newFakeFS()
 	tests := []struct {
-		naam string
+		name string
 		args []string
 		plan Plan
 	}{
-		{"enkel markdown", []string{"boek.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "boek.pdf"}}}},
-		{"enkel zonder markdownextensie", []string{"notitie.txt"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"notitie.txt"}, Doel: "notitie.txt.pdf"}}}},
-		{"enkel met uitvoer na pad", []string{"boek.md", "-o", "eigen.pdf"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "eigen.pdf"}}}},
-		{"mermaid", []string{"--mermaid", "eigen-mmdc", "boek.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "boek.pdf"}}, Mermaid: "eigen-mmdc"}},
-		{"mermaid na invoer", []string{"boek.md", "--mermaid", "eigen-mmdc"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "boek.pdf"}}, Mermaid: "eigen-mmdc"}},
-		{"mermaid bij map", []string{"--mermaid", "uit", "wiki"}, Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: wikiBronnen("wiki"), Doel: "wiki.pdf"}}, Mermaid: "uit"}},
-		{"laatste mermaid wint", []string{"--mermaid", "eerste", "--mermaid", "tweede", "boek.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "boek.pdf"}}, Mermaid: "tweede"}},
-		{"mermaid met los", []string{"--los", "--mermaid", "pad", "wiki"}, Plan{Modus: ModusLos, Taken: losseTaken("wiki", ""), Mermaid: "pad"}},
-		{"invoer na dubbele streep", []string{"--", "boek.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "boek.pdf"}}}},
-		{"mermaid voor uitvoer", []string{"--mermaid", "pad", "-o", "eigen.pdf", "boek.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"boek.md"}, Doel: "eigen.pdf"}}, Mermaid: "pad"}},
+		{"enkel markdown", []string{"boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}}},
+		{"enkel zonder markdownextensie", []string{"notitie.txt"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"notitie.txt"}, Target: "notitie.txt.pdf"}}}},
+		{"enkel met uitvoer na pad", []string{"boek.md", "-o", "eigen.pdf"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "eigen.pdf"}}}},
+		{"mermaid", []string{"--mermaid", "eigen-mmdc", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}, Mermaid: "eigen-mmdc"}},
+		{"mermaid na invoer", []string{"boek.md", "--mermaid", "eigen-mmdc"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}, Mermaid: "eigen-mmdc"}},
+		{"mermaid bij map", []string{"--mermaid", "uit", "wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}, Mermaid: "uit"}},
+		{"laatste mermaid wint", []string{"--mermaid", "eerste", "--mermaid", "tweede", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}, Mermaid: "tweede"}},
+		{"mermaid met los", []string{"--los", "--mermaid", "pad", "wiki"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", ""), Mermaid: "pad"}},
+		{"invoer na dubbele streep", []string{"--", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}}},
+		{"mermaid voor uitvoer", []string{"--mermaid", "pad", "-o", "eigen.pdf", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "eigen.pdf"}}, Mermaid: "pad"}},
 
-		{"samengevoegd", []string{"wiki"}, Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: wikiBronnen("wiki"), Doel: "wiki.pdf"}}}},
-		{"samengevoegd met schuine streep", []string{"wiki/"}, Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: wikiBronnen("wiki/"), Doel: "wiki.pdf"}}}},
-		{"samengevoegd met uitvoer", []string{"-o", "boek.pdf", "wiki"}, Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: wikiBronnen("wiki"), Doel: "boek.pdf"}}}},
-		{"los", []string{"wiki", "--los"}, Plan{Modus: ModusLos, Taken: losseTaken("wiki", "")}},
-		{"los kort met mapdoel", []string{"-l", "wiki", "-o", "uit"}, Plan{Modus: ModusLos, Taken: losseTaken("wiki", "uit")}},
+		{"samengevoegd", []string{"wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}}},
+		{"samengevoegd met schuine streep", []string{"wiki/"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki/"), Target: "wiki.pdf"}}}},
+		{"samengevoegd met uitvoer", []string{"-o", "boek.pdf", "wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "boek.pdf"}}}},
+		{"los", []string{"wiki", "--los"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "")}},
+		{"los kort met mapdoel", []string{"-l", "wiki", "-o", "uit"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "uit")}},
 	}
 	for _, test := range tests {
-		t.Run(test.naam, func(t *testing.T) {
-			plan, err := Plannen(test.args, fs)
+		t.Run(test.name, func(t *testing.T) {
+			plan, err := Parse(test.args, fs)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,14 +87,14 @@ func TestPlannenModiEnDoelen(t *testing.T) {
 	}
 }
 
-func TestPlannenFouten(t *testing.T) {
-	fs := nieuwNepFS()
+func TestParseErrors(t *testing.T) {
+	fs := newFakeFS()
 	tests := []struct {
-		naam  string
-		args  []string
-		tekst string
+		name string
+		args []string
+		text string
 	}{
-		{"geen argument", nil, "geen invoer opgegeven\n" + Gebruik},
+		{"geen argument", nil, "geen invoer opgegeven\n" + Usage},
 		{"meerdere argumenten", []string{"boek.md", "notitie.txt"}, "precies één invoerpad is vereist"},
 		{"onbekende vlag", []string{"--anders", "boek.md"}, "onbekende vlag: --anders"},
 		{"ontbrekende uitvoer", []string{"boek.md", "-o"}, "-o verwacht een pad"},
@@ -109,34 +109,34 @@ func TestPlannenFouten(t *testing.T) {
 		{"losdoel is bestand", []string{"wiki", "--los", "-o", "doel.pdf"}, "-o verwijst naar een bestand, maar bij --los is een map nodig"},
 	}
 	for _, test := range tests {
-		t.Run(test.naam, func(t *testing.T) {
-			_, err := Plannen(test.args, fs)
-			if err == nil || !strings.Contains(err.Error(), test.tekst) {
-				t.Fatalf("fout = %v, wil %q", err, test.tekst)
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse(test.args, fs)
+			if err == nil || !strings.Contains(err.Error(), test.text) {
+				t.Fatalf("fout = %v, wil %q", err, test.text)
 			}
 		})
 	}
 }
 
-func TestPlannenOnderstreepteNamen(t *testing.T) {
-	fs := nieuwNepFS()
+func TestParseUnderscoredNames(t *testing.T) {
+	fs := newFakeFS()
 	tests := []struct {
-		naam  string
-		args  []string
-		plan  Plan
-		tekst string
+		name string
+		args []string
+		plan Plan
+		text string
 	}{
-		{"samengevoegd slaat navigatie over", []string{"wiki"}, Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: wikiBronnen("wiki"), Doel: "wiki.pdf"}}}, ""},
-		{"los slaat navigatie over", []string{"--los", "wiki"}, Plan{Modus: ModusLos, Taken: losseTaken("wiki", "")}, ""},
+		{"samengevoegd slaat navigatie over", []string{"wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}}, ""},
+		{"los slaat navigatie over", []string{"--los", "wiki"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "")}, ""},
 		{"alleen navigatie geeft fout", []string{"navigatie"}, Plan{}, "map \"navigatie\" bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)"},
-		{"expliciet navigatiebestand", []string{"_Footer.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"_Footer.md"}, Doel: "_Footer.pdf"}}}, ""},
+		{"expliciet navigatiebestand", []string{"_Footer.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"_Footer.md"}, Target: "_Footer.pdf"}}}, ""},
 	}
 	for _, test := range tests {
-		t.Run(test.naam, func(t *testing.T) {
-			plan, err := Plannen(test.args, fs)
-			if test.tekst != "" {
-				if err == nil || err.Error() != test.tekst {
-					t.Fatalf("fout = %v, wil %q", err, test.tekst)
+		t.Run(test.name, func(t *testing.T) {
+			plan, err := Parse(test.args, fs)
+			if test.text != "" {
+				if err == nil || err.Error() != test.text {
+					t.Fatalf("fout = %v, wil %q", err, test.text)
 				}
 				return
 			}
@@ -146,68 +146,68 @@ func TestPlannenOnderstreepteNamen(t *testing.T) {
 			if !reflect.DeepEqual(plan, test.plan) {
 				t.Errorf("plan = %#v, wil %#v", plan, test.plan)
 			}
-			if test.plan.Modus == ModusSamengevoegd && len(plan.Taken[0].Bronnen) != 11 {
-				t.Errorf("aantal bronnen = %d, wil 11", len(plan.Taken[0].Bronnen))
+			if test.plan.Mode == ModeMerged && len(plan.Tasks[0].Sources) != 11 {
+				t.Errorf("aantal bronnen = %d, wil 11", len(plan.Tasks[0].Sources))
 			}
-			if test.plan.Modus == ModusLos && len(plan.Taken) != 11 {
-				t.Errorf("aantal taken = %d, wil 11", len(plan.Taken))
+			if test.plan.Mode == ModeSeparate && len(plan.Tasks) != 11 {
+				t.Errorf("aantal taken = %d, wil 11", len(plan.Tasks))
 			}
 		})
 	}
 }
 
-func TestPlannenHulpEnVersie(t *testing.T) {
-	fs := nieuwNepFS()
+func TestParseHelpAndVersion(t *testing.T) {
+	fs := newFakeFS()
 	for _, test := range []struct {
 		args []string
-		wil  error
+		want error
 	}{
-		{[]string{"-h"}, ErrHulp},
-		{[]string{"--help"}, ErrHulp},
-		{[]string{"--version"}, ErrVersie},
+		{[]string{"-h"}, ErrHelp},
+		{[]string{"--help"}, ErrHelp},
+		{[]string{"--version"}, ErrVersion},
 	} {
-		_, err := Plannen(test.args, fs)
-		if !errors.Is(err, test.wil) {
-			t.Errorf("Plannen(%q): %v, wil %v", test.args, err, test.wil)
+		_, err := Parse(test.args, fs)
+		if !errors.Is(err, test.want) {
+			t.Errorf("Plannen(%q): %v, wil %v", test.args, err, test.want)
 		}
 	}
 }
 
-func TestOSBestandssysteem(t *testing.T) {
-	mapnaam := t.TempDir()
-	if err := os.WriteFile(filepath.Join(mapnaam, "bestand"), []byte("inhoud"), 0o600); err != nil {
+func TestOSFileSystem(t *testing.T) {
+	dirName := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dirName, "bestand"), []byte("inhoud"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fs := OSBestandssysteem{}
-	isMap, err := fs.Bestaat(mapnaam)
-	if err != nil || !isMap {
-		t.Fatalf("Bestaat(map) = %v, %v", isMap, err)
+	fs := OSFileSystem{}
+	isDir, err := fs.Stat(dirName)
+	if err != nil || !isDir {
+		t.Fatalf("Bestaat(map) = %v, %v", isDir, err)
 	}
-	isMap, err = fs.Bestaat(filepath.Join(mapnaam, "bestand"))
-	if err != nil || isMap {
-		t.Fatalf("Bestaat(bestand) = %v, %v", isMap, err)
+	isDir, err = fs.Stat(filepath.Join(dirName, "bestand"))
+	if err != nil || isDir {
+		t.Fatalf("Bestaat(bestand) = %v, %v", isDir, err)
 	}
-	namen, err := fs.LeesMap(mapnaam)
-	if err != nil || !reflect.DeepEqual(namen, []string{"bestand"}) {
-		t.Fatalf("LeesMap = %q, %v", namen, err)
+	names, err := fs.ReadDir(dirName)
+	if err != nil || !reflect.DeepEqual(names, []string{"bestand"}) {
+		t.Fatalf("LeesMap = %q, %v", names, err)
 	}
 }
 
-func wikiBronnen(mapnaam string) []string {
+func wikiSources(dirName string) []string {
 	return []string{
-		filepath.Join(mapnaam, "10.md"), filepath.Join(mapnaam, "2.md"), filepath.Join(mapnaam, "A.md"), filepath.Join(mapnaam, "B.md"), filepath.Join(mapnaam, "a.MD"), filepath.Join(mapnaam, "b.md"), filepath.Join(mapnaam, "eind.md"), filepath.Join(mapnaam, "hoofdstuk.md"), filepath.Join(mapnaam, "index.md"), filepath.Join(mapnaam, "laatste.md"), filepath.Join(mapnaam, "z.md"),
+		filepath.Join(dirName, "10.md"), filepath.Join(dirName, "2.md"), filepath.Join(dirName, "A.md"), filepath.Join(dirName, "B.md"), filepath.Join(dirName, "a.MD"), filepath.Join(dirName, "b.md"), filepath.Join(dirName, "eind.md"), filepath.Join(dirName, "hoofdstuk.md"), filepath.Join(dirName, "index.md"), filepath.Join(dirName, "laatste.md"), filepath.Join(dirName, "z.md"),
 	}
 }
 
-func losseTaken(mapnaam, doelmap string) []Taak {
-	bronnen := wikiBronnen(mapnaam)
-	taken := make([]Taak, len(bronnen))
-	for i, bron := range bronnen {
-		doel := pdfNaam(bron)
-		if doelmap != "" {
-			doel = filepath.Join(doelmap, filepath.Base(doel))
+func separateTasks(dirName, targetDir string) []Task {
+	sources := wikiSources(dirName)
+	tasks := make([]Task, len(sources))
+	for i, source := range sources {
+		target := pdfName(source)
+		if targetDir != "" {
+			target = filepath.Join(targetDir, filepath.Base(target))
 		}
-		taken[i] = Taak{Bronnen: []string{bron}, Doel: doel}
+		tasks[i] = Task{Sources: []string{source}, Target: target}
 	}
-	return taken
+	return tasks
 }

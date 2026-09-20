@@ -11,92 +11,92 @@ import (
 	"github.com/gnutterts/md2pdf/internal/mermaid"
 )
 
-type actieveStijl struct {
-	familie      string
-	grootte      float64
-	vet, cursief bool
+type activeStyle struct {
+	family       string
+	size         float64
+	bold, italic bool
 }
 
-type nepVel struct {
-	aanroepen []string
-	stijl     actieveStijl
-	tabellen  [][]markdown.Row
+type fakeCanvas struct {
+	calls  []string
+	style  activeStyle
+	tables [][]markdown.Row
 }
 
-func (n *nepVel) NieuwePagina() { n.aanroepen = append(n.aanroepen, "pagina") }
-func (n *nepVel) Stijl(f string, v, c bool, g float64) {
-	n.stijl = actieveStijl{familie: f, grootte: g, vet: v, cursief: c}
-	n.aanroepen = append(n.aanroepen, "stijl:"+n.stijl.string())
+func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
+func (n *fakeCanvas) Style(f string, v, c bool, g float64) {
+	n.style = activeStyle{family: f, size: g, bold: v, italic: c}
+	n.calls = append(n.calls, "stijl:"+n.style.string())
 }
-func (n *nepVel) Tekst(s string) {
-	n.aanroepen = append(n.aanroepen, "tekst:"+s+":"+n.stijl.string())
+func (n *fakeCanvas) Text(s string) {
+	n.calls = append(n.calls, "tekst:"+s+":"+n.style.string())
 }
-func (n *nepVel) Link(s, u string) {
-	n.aanroepen = append(n.aanroepen, "link:"+s+":"+u+":"+n.stijl.string())
+func (n *fakeCanvas) Link(s, u string) {
+	n.calls = append(n.calls, "link:"+s+":"+u+":"+n.style.string())
 }
-func (n *nepVel) Regeleinde(h float64) {
-	n.aanroepen = append(n.aanroepen, fmt.Sprintf("einde:%g", h))
+func (n *fakeCanvas) LineBreak(h float64) {
+	n.calls = append(n.calls, fmt.Sprintf("einde:%g", h))
 }
-func (n *nepVel) Inspringen(p float64) { n.aanroepen = append(n.aanroepen, "inspringen") }
-func (n *nepVel) HangendInspringen()   { n.aanroepen = append(n.aanroepen, "hangend") }
-func (n *nepVel) Codeblok(r []string) {
-	n.aanroepen = append(n.aanroepen, "code:"+strings.Join(r, ","))
+func (n *fakeCanvas) Indent(p float64) { n.calls = append(n.calls, "inspringen") }
+func (n *fakeCanvas) HangingIndent()   { n.calls = append(n.calls, "hangend") }
+func (n *fakeCanvas) CodeBlock(r []string) {
+	n.calls = append(n.calls, "code:"+strings.Join(r, ","))
 }
-func (n *nepVel) Diagram([]byte) error { n.aanroepen = append(n.aanroepen, "diagram"); return nil }
-func (n *nepVel) Streep()              { n.aanroepen = append(n.aanroepen, "streep") }
-func (n *nepVel) Tabel(rijen []markdown.Row) {
-	n.tabellen = append(n.tabellen, rijen)
-	n.aanroepen = append(n.aanroepen, fmt.Sprintf("tabel:%d", len(rijen)))
+func (n *fakeCanvas) Diagram([]byte) error { n.calls = append(n.calls, "diagram"); return nil }
+func (n *fakeCanvas) Rule()                { n.calls = append(n.calls, "streep") }
+func (n *fakeCanvas) Table(rows []markdown.Row) {
+	n.tables = append(n.tables, rows)
+	n.calls = append(n.calls, fmt.Sprintf("tabel:%d", len(rows)))
 }
-func (n *nepVel) Fout() error { return nil }
-func (s actieveStijl) string() string {
-	return fmt.Sprintf("%s:%s:%g", s.familie, stijl(s.vet, s.cursief), s.grootte)
+func (n *fakeCanvas) Err() error { return nil }
+func (s activeStyle) string() string {
+	return fmt.Sprintf("%s:%s:%g", s.family, style(s.bold, s.italic), s.size)
 }
-func TestTekenMermaidTerugval(t *testing.T) {
-	blok := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}}}
+func TestDrawMermaidFallback(t *testing.T) {
+	block := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}}}
 	for _, test := range []struct {
-		naam, script   string
-		wilDiagram     bool
-		waarschuwingen int
+		name, script string
+		wantDiagram  bool
+		warnings     int
 	}{
 		{"gelukt", "#!/bin/sh\nprintf png > \"$4\"\n", true, 0},
 		{"faalt", "#!/bin/sh\nexit 1\n", false, 1},
 		{"uit", "", false, 0},
 	} {
-		t.Run(test.naam, func(t *testing.T) {
-			vel := &nepVel{}
-			opties := Opties{}
+		t.Run(test.name, func(t *testing.T) {
+			canvas := &fakeCanvas{}
+			options := Options{}
 			if test.script != "" {
-				pad := filepath.Join(t.TempDir(), "renderer")
-				if err := os.WriteFile(pad, []byte(test.script), 0o755); err != nil {
+				path := filepath.Join(t.TempDir(), "renderer")
+				if err := os.WriteFile(path, []byte(test.script), 0o755); err != nil {
 					t.Fatal(err)
 				}
-				opties.Mermaid = mermaid.Renderer{Path: pad}
+				options.Mermaid = mermaid.Renderer{Path: path}
 			}
-			waarschuwingen := 0
-			opties.Waarschuw = func(string) { waarschuwingen++ }
-			if err := Teken(blok, vel, opties); err != nil {
+			warnings := 0
+			options.Warn = func(string) { warnings++ }
+			if err := Draw(block, canvas, options); err != nil {
 				t.Fatal(err)
 			}
-			heeftDiagram := bevat(vel.aanroepen, "diagram")
-			heeftCode := bevat(vel.aanroepen, "code:graph TD,A-->B")
-			if heeftDiagram != test.wilDiagram || heeftCode == test.wilDiagram || waarschuwingen != test.waarschuwingen {
-				t.Fatalf("aanroepen=%v, waarschuwingen=%d", vel.aanroepen, waarschuwingen)
+			hasDiagram := contains(canvas.calls, "diagram")
+			hasCode := contains(canvas.calls, "code:graph TD,A-->B")
+			if hasDiagram != test.wantDiagram || hasCode == test.wantDiagram || warnings != test.warnings {
+				t.Fatalf("aanroepen=%v, waarschuwingen=%d", canvas.calls, warnings)
 			}
 		})
 	}
 }
 
-func bevat(aanroepen []string, wil string) bool {
-	for _, aanroep := range aanroepen {
-		if aanroep == wil {
+func contains(calls []string, want string) bool {
+	for _, call := range calls {
+		if call == want {
 			return true
 		}
 	}
 	return false
 }
 
-func stijl(v, c bool) string {
+func style(v, c bool) string {
 	if v && c {
 		return "BI"
 	}
@@ -109,11 +109,11 @@ func stijl(v, c bool) string {
 	return ""
 }
 
-func TestTekenVolgordeEnStijlen(t *testing.T) {
+func TestDrawOrderAndStyles(t *testing.T) {
 	tests := []struct {
-		naam    string
-		blokken []markdown.Block
-		wil     []string
+		name   string
+		blocks []markdown.Block
+		want   []string
 	}{
 		{"kop en alinea", []markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}, {Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "tekst"}}}}, []string{"stijl:Helvetica:B:20", "tekst:Titel:Helvetica:B:20", "stijl:Helvetica::11", "tekst:tekst:Helvetica::11"}},
 		{"geneste lijst", []markdown.Block{{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: "binnen"}}}}, []string{"inspringen", "tekst:• :Helvetica::11", "tekst:binnen:Helvetica::11", "inspringen"}},
@@ -122,55 +122,55 @@ func TestTekenVolgordeEnStijlen(t *testing.T) {
 		{"citaat", []markdown.Block{{Kind: markdown.Quote, Spans: []markdown.Span{{Text: "woord"}}}}, []string{"inspringen", "stijl:Helvetica:I:11", "tekst:woord:Helvetica:I:11", "inspringen"}},
 	}
 	for _, test := range tests {
-		t.Run(test.naam, func(t *testing.T) {
-			vel := &nepVel{}
-			if err := Teken(test.blokken, vel, Opties{}); err != nil {
+		t.Run(test.name, func(t *testing.T) {
+			canvas := &fakeCanvas{}
+			if err := Draw(test.blocks, canvas, Options{}); err != nil {
 				t.Fatal(err)
 			}
-			controleerVolgorde(t, vel.aanroepen, test.wil)
+			checkOrder(t, canvas.calls, test.want)
 		})
 	}
 }
 
-func TestTekenTabel(t *testing.T) {
-	blokken := []markdown.Block{{Kind: markdown.Table, Rows: []markdown.Row{
+func TestDrawTable(t *testing.T) {
+	blocks := []markdown.Block{{Kind: markdown.Table, Rows: []markdown.Row{
 		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "A"}}}, {Spans: []markdown.Span{{Text: "B"}}}}},
 		{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "1"}}}, {Spans: []markdown.Span{{Text: "2"}}}}},
 	}}}
-	vel := &nepVel{}
-	if err := Teken(blokken, vel, Opties{}); err != nil {
+	canvas := &fakeCanvas{}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	tabelAanroepen := 0
-	for _, aanroep := range vel.aanroepen {
-		if strings.HasPrefix(aanroep, "tabel:") {
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "tabel:") {
 			tabelAanroepen++
 		}
 	}
 	if tabelAanroepen != 1 {
-		t.Fatalf("Tabel is %d keer aangeroepen: %q", tabelAanroepen, vel.aanroepen)
+		t.Fatalf("Tabel is %d keer aangeroepen: %q", tabelAanroepen, canvas.calls)
 	}
-	if len(vel.tabellen) != 1 || len(vel.tabellen[0]) != 2 {
-		t.Fatalf("Tabel kreeg %d rijen, wil 2: %v", len(vel.tabellen), vel.tabellen)
+	if len(canvas.tables) != 1 || len(canvas.tables[0]) != 2 {
+		t.Fatalf("Tabel kreeg %d rijen, wil 2: %v", len(canvas.tables), canvas.tables)
 	}
-	if !vel.tabellen[0][0].Header || vel.tabellen[0][1].Header {
-		t.Fatalf("kopregel niet als eerste rij: %v", vel.tabellen[0])
+	if !canvas.tables[0][0].Header || canvas.tables[0][1].Header {
+		t.Fatalf("kopregel niet als eerste rij: %v", canvas.tables[0])
 	}
 }
 
-func TestRegelhoogteVolgtKopgrootte(t *testing.T) {
-	vel := &nepVel{}
-	if err := Teken([]markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}}, vel, Opties{}); err != nil {
+func TestLineHeightFollowsHeadingSize(t *testing.T) {
+	canvas := &fakeCanvas{}
+	if err := Draw([]markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}}, canvas, Options{}); err != nil {
 		t.Fatal(err)
 	}
-	controleerVolgorde(t, vel.aanroepen, []string{"einde:27"})
+	checkOrder(t, canvas.calls, []string{"einde:27"})
 }
 
-func TestTekstStijlen(t *testing.T) {
+func TestTextStyles(t *testing.T) {
 	tests := []struct {
-		naam string
-		blok markdown.Block
-		wil  string
+		name  string
+		block markdown.Block
+		want  string
 	}{
 		{"kop niveau 1", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Een"}}}, "tekst:Een:Helvetica:B:20"},
 		{"kop niveau 2", markdown.Block{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Twee"}}}, "tekst:Twee:Helvetica:B:16"},
@@ -181,30 +181,30 @@ func TestTekstStijlen(t *testing.T) {
 		{"code in alinea", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "code", Code: true}}}, "tekst:code:Courier::9.5"},
 	}
 	for _, test := range tests {
-		t.Run(test.naam, func(t *testing.T) {
-			vel := &nepVel{}
-			if err := Teken([]markdown.Block{test.blok}, vel, Opties{}); err != nil {
+		t.Run(test.name, func(t *testing.T) {
+			canvas := &fakeCanvas{}
+			if err := Draw([]markdown.Block{test.block}, canvas, Options{}); err != nil {
 				t.Fatal(err)
 			}
-			controleerVolgorde(t, vel.aanroepen, []string{test.wil})
+			checkOrder(t, canvas.calls, []string{test.want})
 		})
 	}
 }
 
-func controleerVolgorde(t *testing.T, kreeg, wil []string) {
+func checkOrder(t *testing.T, got, want []string) {
 	t.Helper()
-	vanaf := 0
-	for _, verwacht := range wil {
-		gevonden := -1
-		for i := vanaf; i < len(kreeg); i++ {
-			if kreeg[i] == verwacht {
-				gevonden = i
+	start := 0
+	for _, expected := range want {
+		found := -1
+		for i := start; i < len(got); i++ {
+			if got[i] == expected {
+				found = i
 				break
 			}
 		}
-		if gevonden < 0 {
-			t.Fatalf("%q ontbreekt in %q", verwacht, kreeg)
+		if found < 0 {
+			t.Fatalf("%q ontbreekt in %q", expected, got)
 		}
-		vanaf = gevonden + 1
+		start = found + 1
 	}
 }
