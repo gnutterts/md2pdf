@@ -15,7 +15,7 @@ const version = "md2pdf 0.1.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "fout:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -36,7 +36,7 @@ func run(args []string) error {
 	options := render.Options{
 		Mermaid: mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID")),
 		Warn: func(message string) {
-			fmt.Fprintln(os.Stderr, "waarschuwing:", message)
+			fmt.Fprintln(os.Stderr, "warning:", message)
 		},
 	}
 	return runner.Run(plan, options)

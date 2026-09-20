@@ -39,21 +39,21 @@ func TestDiagramPNG(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(content, []byte("/Subtype /Image")) {
-		t.Fatal("PDF bevat geen afbeelding")
+		t.Fatal("PDF contains no image")
 	}
 }
 
 func TestDiagramInvalidPNGReturnsError(t *testing.T) {
 	document := New()
-	if err := document.Canvas().Diagram([]byte("geen PNG")); err == nil {
-		t.Fatal("ongeldige PNG gaf geen fout")
+	if err := document.Canvas().Diagram([]byte("not PNG")); err == nil {
+		t.Fatal("invalid PNG did not return an error")
 	}
 }
 
 func TestWritePDF(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "alinea.pdf")
+	path := filepath.Join(t.TempDir(), "paragraph.pdf")
 	document := New()
-	if err := render.Draw([]markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "Een alinea."}}}}, document.Canvas(), render.Options{}); err != nil {
+	if err := render.Draw([]markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "A paragraph."}}}}, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Write(path); err != nil {
@@ -64,7 +64,7 @@ func TestWritePDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(content, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(content), []byte("%%EOF")) || len(content) <= 500 {
-		t.Fatalf("ongeldige PDF van %d bytes", len(content))
+		t.Fatalf("invalide PDF van %d bytes", len(content))
 	}
 }
 
@@ -84,19 +84,19 @@ func TestCP1252IsInContentStream(t *testing.T) {
 	}
 	stream := contentStream(t, content)
 	if !bytes.Contains(stream, []byte{0xe9}) {
-		t.Fatalf("cp1252-byte 0xe9 ontbreekt in % x", stream)
+		t.Fatalf("cp1252-byte 0xe9 is missing in % x", stream)
 	}
 	if bytes.Contains(stream, []byte{0xc3, 0xa9}) {
-		t.Fatalf("UTF-8-bytes gevonden in % x", stream)
+		t.Fatalf("UTF-8 bytes found in % x", stream)
 	}
 }
 
 func TestLongListItemStaysIndented(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "lijst.pdf")
+	path := filepath.Join(t.TempDir(), "list.pdf")
 	document := New()
 	blocks := []markdown.Block{
-		{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: strings.Repeat("een lang lijstitem ", 40)}}},
-		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "einde"}}},
+		{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: strings.Repeat("a long list item ", 40)}}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "end"}}},
 	}
 	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
@@ -111,35 +111,35 @@ func TestLongListItemStaysIndented(t *testing.T) {
 	stream := contentStream(t, content)
 	columns := textColumns(t, stream)
 	if len(columns) < 4 {
-		t.Fatalf("te weinig tekstregels om terugloop te beoordelen: %q", stream)
+		t.Fatalf("te weinig textregels om terugloop te beoordelen: %q", stream)
 	}
 	// The first line is the bullet, followed by the item text; all
 	// subsequent lines should hang below that text column, not below the bullet.
 	textColumn := columns[1]
 	for i, column := range columns[2 : len(columns)-1] {
 		if column != textColumn {
-			t.Fatalf("vervolgregel %d staat op %.2f, wil %.2f: %q", i+1, column, textColumn, stream)
+			t.Fatalf("continuation line %d is at %.2f, want %.2f: %q", i+1, column, textColumn, stream)
 		}
 	}
 	if final := columns[len(columns)-1]; final >= columns[0] {
-		t.Fatalf("linkermarge is niet hersteld: alinea op %.2f, bol stond op %.2f", final, columns[0])
+		t.Fatalf("left margin was not restored: paragraph at %.2f, bullet was at %.2f", final, columns[0])
 	}
 }
 
 func TestTableTextIsInContentStream(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tabel.pdf")
+	path := filepath.Join(t.TempDir(), "table.pdf")
 	document := New()
 	rows := []markdown.Row{
 		{Header: true, Cells: []markdown.Cell{
-			{Spans: []markdown.Span{{Text: "Naam"}}},
-			{Spans: []markdown.Span{{Text: "Waarde"}}},
+			{Spans: []markdown.Span{{Text: "Name"}}},
+			{Spans: []markdown.Span{{Text: "Value"}}},
 		}},
 		{Cells: []markdown.Cell{
-			{Spans: []markdown.Span{{Text: "een"}}},
+			{Spans: []markdown.Span{{Text: "one"}}},
 			{Spans: []markdown.Span{{Text: "1"}}},
 		}},
 		{Cells: []markdown.Cell{
-			{Spans: []markdown.Span{{Text: "twee"}}},
+			{Spans: []markdown.Span{{Text: "two"}}},
 			{Spans: []markdown.Span{{Text: "2"}}},
 		}},
 	}
@@ -152,11 +152,11 @@ func TestTableTextIsInContentStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	stream := contentStream(t, content)
-	if !bytes.Contains(stream, []byte("Naam")) {
-		t.Fatalf("kopregel ontbreekt in %q", stream)
+	if !bytes.Contains(stream, []byte("Name")) {
+		t.Fatalf("header row is missing in %q", stream)
 	}
-	if !bytes.Contains(stream, []byte("twee")) {
-		t.Fatalf("laatste datarij ontbreekt in %q", stream)
+	if !bytes.Contains(stream, []byte("two")) {
+		t.Fatalf("last data row is missing in %q", stream)
 	}
 }
 
@@ -164,18 +164,18 @@ func TestTableTooWideWritesWithoutError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "breed.pdf")
 	document := New()
 	rows := []markdown.Row{
-		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("kop ", 200)}}}}},
+		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("header ", 200)}}}}},
 		{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("breed ", 200)}}}}},
 	}
 	document.Canvas().Table(rows)
 	if err := document.Canvas().Err(); err != nil {
-		t.Fatalf("Fout() na tekenen: %v", err)
+		t.Fatalf("Err() after drawing: %v", err)
 	}
 	if err := document.Write(path); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Canvas().Err(); err != nil {
-		t.Fatalf("Fout() na schrijven: %v", err)
+		t.Fatalf("Err() after writing: %v", err)
 	}
 }
 
@@ -183,10 +183,10 @@ func TestTableRepeatsHeaderAcrossPages(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "paginas.pdf")
 	document := New()
 	rows := []markdown.Row{
-		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "Koptekst"}}}}},
+		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "Header"}}}}},
 	}
 	for i := 0; i < 60; i++ {
-		rows = append(rows, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: fmt.Sprintf("rij%d", i)}}}}})
+		rows = append(rows, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: fmt.Sprintf("row%d", i)}}}}})
 	}
 	document.Canvas().Table(rows)
 	if err := document.Write(path); err != nil {
@@ -197,14 +197,14 @@ func TestTableRepeatsHeaderAcrossPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if count := pageCount(content); count <= 1 {
-		t.Fatalf("PDF telt %d pagina's, wil meer dan één", count)
+		t.Fatalf("PDF has %d pages, want meer dan één", count)
 	}
 	headers := 0
 	for _, stream := range contentStreams(t, content) {
-		headers += bytes.Count(stream, []byte("Koptekst"))
+		headers += bytes.Count(stream, []byte("Header"))
 	}
 	if headers <= 1 {
-		t.Fatalf("kopregel komt %d keer voor, wil vaker dan één", headers)
+		t.Fatalf("header row appears %d times, want vaker dan één", headers)
 	}
 }
 
@@ -259,7 +259,7 @@ func contentStreams(t *testing.T, pdf []byte) [][]byte {
 		remaining = remaining[start+end+len("\nendstream"):]
 	}
 	if len(out) == 0 {
-		t.Fatal("geen inhoudsstromen gevonden")
+		t.Fatal("no content streams found")
 	}
 	return out
 }
@@ -289,7 +289,7 @@ func TestRenderREADMEToPDF(t *testing.T) {
 	}
 	info, err := os.Stat(path)
 	if err != nil || info.Size() == 0 {
-		t.Fatalf("uitvoer = %v, %v", info, err)
+		t.Fatalf("output = %v, %v", info, err)
 	}
 }
 
@@ -314,6 +314,6 @@ func TestDiagramTallerThanOnePageIsScaled(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pageCount(content) != 1 {
-		t.Fatalf("diagram beslaat %d pagina's, wil er één", pageCount(content))
+		t.Fatalf("diagram spans %d pages, want one", pageCount(content))
 	}
 }

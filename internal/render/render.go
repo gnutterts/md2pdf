@@ -105,7 +105,7 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 					canvas.LineBreak(6)
 					break
 				}
-				warn(options, fmt.Sprintf("mermaid-diagram kon niet worden getekend: %v", err))
+				warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
 			}
 			drawCodeBlock(canvas, block.Lines)
 		case markdown.Quote:

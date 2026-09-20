@@ -1,56 +1,83 @@
 # md2pdf
 
-`md2pdf` zet Markdown om naar PDF. De opdracht kent drie manieren van werken:
+`md2pdf` converts Markdown to PDF. It has three modes of operation:
 
-- Eén bestand naar één PDF: `md2pdf tmp/README.md`
-- Een map samengevoegd naar één PDF: `md2pdf tmp/wiki`
-- Een PDF per bestand in een map: `md2pdf --los tmp/wiki`
+- One file to one PDF: `md2pdf tmp/README.md`
+- A directory merged into one PDF: `md2pdf tmp/wiki`
+- One PDF per file in a directory: `md2pdf --separate tmp/wiki`
 
-| Vlag | Betekenis |
+## Requirements
+
+- Go 1.27 or later.
+- Mermaid CLI (`mmdc`) is optional. Without this renderer, Mermaid blocks appear as code blocks and nothing else unusual happens.
+
+## Building and installing
+
+Build in the repository:
+
+```sh
+go build -o md2pdf ./cmd/md2pdf
+```
+
+Install to `$(go env GOPATH)/bin`:
+
+```sh
+go install github.com/gnutterts/md2pdf/cmd/md2pdf@latest
+```
+
+Run the tests:
+
+```sh
+go test ./...
+```
+
+The test suite does not require Mermaid CLI.
+
+| Flag | Meaning |
 |---|---|
-| `-o <pad>` | Uitvoerbestand, of bij `--los` de uitvoermap |
-| `--los`, `-l` | Maak een PDF per Markdown-bestand in een map |
-| `--mermaid <pad>` | Pad naar de Mermaid-renderer |
-| `--version` | Druk de versie af |
-| `-h`, `--help` | Druk het gebruik af |
+| `-o <path>` | Output file, or the output directory with `--separate` |
+| `--separate`, `-s` | Create one PDF for every Markdown file in a directory |
+| `--mermaid <path>` | Path to the Mermaid renderer; `MD2PDF_MERMAID` can also set it, and `off` disables rendering |
+| `--version` | Print the version |
+| `-h`, `--help` | Print usage |
 
-## Waar de PDF landt
+## Where the PDF goes
 
-Zonder `-o` komt de uitvoer naast de invoer te staan:
+Without `-o`, output is placed next to the input:
 
-| Invoer | Uitvoer |
+| Input | Output |
 |---|---|
 | `md2pdf tmp/README.md` | `tmp/README.pdf` |
-| `md2pdf tmp/wiki` | `tmp/wiki.pdf`, naast de map |
-| `md2pdf --los tmp/wiki` | een PDF naast elk bronbestand, in `tmp/wiki/` |
+| `md2pdf tmp/wiki` | `tmp/wiki.pdf`, next to the directory |
+| `md2pdf --separate tmp/wiki` | one PDF next to every source file in `tmp/wiki/` |
 
-Met `-o` is het pad een bestandsnaam bij de eerste twee modi en een map bij `--los`. Een `-o` die
-daarmee in tegenspraak is — een bestaande map waar een bestandsnaam hoort, of een bestaand bestand
-waar een map hoort — geeft een foutmelding en exitcode 1.
+With `-o`, the path is a file name in the first two modes and a directory with `--separate`. An `-o`
+that conflicts with this — an existing directory where a file name belongs, or an existing file where a
+directory belongs — prints an error and exits with code 1.
 
-Bij een map worden alle `.md`-bestanden in die map zelf meegenomen, niet die in submappen, in
-alfabetische volgorde op bestandsnaam. Namen die met `_` beginnen worden overgeslagen; wie zo'n
-bestand rechtstreeks als argument geeft, krijgt het wél verwerkt.
+For a directory, all `.md` files directly in that directory are included, not files in subdirectories,
+in alphabetical file-name order. Names starting with `_` are skipped; a file with such a name that is
+provided directly as an argument is still processed.
 
-Bij de samengevoegde modus begint elk bronbestand op een nieuwe pagina. Bij `--los` wordt een
-uitvoermap die nog niet bestaat aangemaakt.
+In merged mode, every source file starts on a new page. With `--separate`, an output directory that
+does not yet exist is created.
 
-## Wat er in de PDF terechtkomt
+## What goes into the PDF
 
-Koppen, alinea's, vet, cursief, inline code, links, geneste en genummerde lijsten, codeblokken,
-blokcitaten, thematische breuken en tabellen. Tabellen krijgen een vette kopregel, kolommen op
-eigen breedte en een herhaalde kopregel als ze over pagina's lopen.
+Headings, paragraphs, bold, italic, inline code, links, nested and numbered lists, code blocks,
+block quotes, thematic breaks, and tables. Tables have a bold header row, individually sized columns,
+and a repeated header row when they span pages.
 
-De tekst wordt gezet in de base-14 fonts van PDF, die coderen in cp1252. Tekens daarbuiten worden
-vertaald waar dat kan — `→` wordt `->` — en anders vervangen door een vraagteken.
+Text uses PDF base-14 fonts, which encode cp1252. Characters outside that encoding are transliterated
+where possible — `→` becomes `->` — and otherwise replaced with a question mark.
 
-Mermaid-blokken worden standaard gerenderd met `mmdc`. Kies een andere renderer met
-`--mermaid <pad>` of `MD2PDF_MERMAID`; `uit` schakelt het renderen uit. Als de renderer ontbreekt of
-faalt, verschijnt een waarschuwing op stderr en blijft het diagram als codeblok zichtbaar.
+Mermaid blocks are rendered with `mmdc` by default. Select another renderer with `--mermaid <path>`
+or `MD2PDF_MERMAID`; `off` disables rendering. If the renderer is missing or fails, a warning is
+written to stderr and the diagram remains visible as a code block.
 
-## Bekende beperkingen
+## Known limitations
 
-- Mermaid-diagrammen vereisen een werkende externe renderer.
-- Inline-opmaak binnen een tabelcel wordt afgevlakt tot platte tekst.
-- Links zijn klikbaar maar niet zichtbaar onderscheiden van gewone tekst.
-- Coderegels die breder zijn dan de tekstkolom worden afgekapt, niet afgebroken.
+- Mermaid diagrams require a working external renderer.
+- Inline formatting inside a table cell is flattened to plain text.
+- Links are clickable but are not visibly distinguished from ordinary text.
+- Code lines wider than the text column are truncated rather than wrapped.

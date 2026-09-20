@@ -39,12 +39,12 @@ func (n fakeFileSystem) ReadDir(path string) ([]string, error) {
 
 func newFakeFS() fakeFileSystem {
 	return fakeFileSystem{
-		paths: map[string]bool{"boek.md": false, "notitie.txt": false, "_Footer.md": false, "wiki": true, "wiki/": true, "leeg": true, "navigatie": true, "doelmap": true, "doel.pdf": false},
+		paths: map[string]bool{"book.md": false, "note.txt": false, "_Footer.md": false, "wiki": true, "wiki/": true, "empty": true, "navigation": true, "targetdir": true, "target.pdf": false},
 		dirs: map[string][]string{
-			"wiki":      {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
-			"wiki/":     {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
-			"leeg":      {"tekst.txt"},
-			"navigatie": {"_Footer.md", "_Sidebar.MD"},
+			"wiki":       {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "end.md", "chapter.md", "last.md", "read.txt", "x.markdown"},
+			"wiki/":      {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "end.md", "chapter.md", "last.md", "read.txt", "x.markdown"},
+			"empty":      {"text.txt"},
+			"navigation": {"_Footer.md", "_Sidebar.MD"},
 		},
 		errors: map[string]error{},
 	}
@@ -57,22 +57,22 @@ func TestParseModesAndTargets(t *testing.T) {
 		args []string
 		plan Plan
 	}{
-		{"enkel markdown", []string{"boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}}},
-		{"enkel zonder markdownextensie", []string{"notitie.txt"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"notitie.txt"}, Target: "notitie.txt.pdf"}}}},
-		{"enkel met uitvoer na pad", []string{"boek.md", "-o", "eigen.pdf"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "eigen.pdf"}}}},
-		{"mermaid", []string{"--mermaid", "eigen-mmdc", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}, Mermaid: "eigen-mmdc"}},
-		{"mermaid na invoer", []string{"boek.md", "--mermaid", "eigen-mmdc"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}, Mermaid: "eigen-mmdc"}},
-		{"mermaid bij map", []string{"--mermaid", "uit", "wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}, Mermaid: "uit"}},
-		{"laatste mermaid wint", []string{"--mermaid", "eerste", "--mermaid", "tweede", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}, Mermaid: "tweede"}},
-		{"mermaid met los", []string{"--los", "--mermaid", "pad", "wiki"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", ""), Mermaid: "pad"}},
-		{"invoer na dubbele streep", []string{"--", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "boek.pdf"}}}},
-		{"mermaid voor uitvoer", []string{"--mermaid", "pad", "-o", "eigen.pdf", "boek.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"boek.md"}, Target: "eigen.pdf"}}, Mermaid: "pad"}},
+		{"single markdown", []string{"book.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "book.pdf"}}}},
+		{"single without markdown extension", []string{"note.txt"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"note.txt"}, Target: "note.txt.pdf"}}}},
+		{"single with output after path", []string{"book.md", "-o", "custom.pdf"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "custom.pdf"}}}},
+		{"mermaid", []string{"--mermaid", "eigen-mmdc", "book.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "book.pdf"}}, Mermaid: "eigen-mmdc"}},
+		{"mermaid after input", []string{"book.md", "--mermaid", "eigen-mmdc"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "book.pdf"}}, Mermaid: "eigen-mmdc"}},
+		{"mermaid for directory", []string{"--mermaid", "off", "wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}, Mermaid: "off"}},
+		{"last mermaid wins", []string{"--mermaid", "first", "--mermaid", "second", "book.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "book.pdf"}}, Mermaid: "second"}},
+		{"mermaid with separate", []string{"--separate", "--mermaid", "path", "wiki"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", ""), Mermaid: "path"}},
+		{"input after double dash", []string{"--", "book.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "book.pdf"}}}},
+		{"mermaid before output", []string{"--mermaid", "path", "-o", "custom.pdf", "book.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"book.md"}, Target: "custom.pdf"}}, Mermaid: "path"}},
 
-		{"samengevoegd", []string{"wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}}},
-		{"samengevoegd met schuine streep", []string{"wiki/"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki/"), Target: "wiki.pdf"}}}},
-		{"samengevoegd met uitvoer", []string{"-o", "boek.pdf", "wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "boek.pdf"}}}},
-		{"los", []string{"wiki", "--los"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "")}},
-		{"los kort met mapdoel", []string{"-l", "wiki", "-o", "uit"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "uit")}},
+		{"merged", []string{"wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}}},
+		{"merged with trailing slash", []string{"wiki/"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki/"), Target: "wiki.pdf"}}}},
+		{"merged with output", []string{"-o", "book.pdf", "wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "book.pdf"}}}},
+		{"separate", []string{"wiki", "--separate"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "")}},
+		{"separate short with directory target", []string{"-s", "wiki", "-o", "off"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "off")}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestParseModesAndTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(plan, test.plan) {
-				t.Errorf("plan = %#v, wil %#v", plan, test.plan)
+				t.Errorf("plan = %#v, want %#v", plan, test.plan)
 			}
 		})
 	}
@@ -94,25 +94,25 @@ func TestParseErrors(t *testing.T) {
 		args []string
 		text string
 	}{
-		{"geen argument", nil, "geen invoer opgegeven\n" + Usage},
-		{"meerdere argumenten", []string{"boek.md", "notitie.txt"}, "precies één invoerpad is vereist"},
-		{"onbekende vlag", []string{"--anders", "boek.md"}, "onbekende vlag: --anders"},
-		{"ontbrekende uitvoer", []string{"boek.md", "-o"}, "-o verwacht een pad"},
-		{"ontbrekende mermaid", []string{"boek.md", "--mermaid"}, "--mermaid verwacht een pad"},
-		{"mermaid is geen afkorting", []string{"boek.md", "--mer"}, "onbekende vlag: --mer"},
-		{"mermaid zonder invoer", []string{"--mermaid", "pad"}, "geen invoer opgegeven"},
-		{"mermaid met onbekende vlag", []string{"--mermaid", "pad", "--anders", "boek.md"}, "onbekende vlag: --anders"},
-		{"niet bestaand", []string{"weg.md"}, "kan \"weg.md\" niet lezen"},
-		{"los bij bestand", []string{"--los", "boek.md"}, "--los werkt alleen op een map"},
-		{"lege map", []string{"leeg"}, "map \"leeg\" bevat geen Markdown-bestanden"},
-		{"bestanddoel is map", []string{"boek.md", "-o", "doelmap"}, "-o verwijst naar een map, maar hier is een bestandsnaam nodig"},
-		{"losdoel is bestand", []string{"wiki", "--los", "-o", "doel.pdf"}, "-o verwijst naar een bestand, maar bij --los is een map nodig"},
+		{"no arguments", nil, "no input given\n" + Usage},
+		{"multiple arguments", []string{"book.md", "note.txt"}, "exactly one input path is required"},
+		{"unknown flag", []string{"--other", "book.md"}, "unknown flag: --other"},
+		{"missing output", []string{"book.md", "-o"}, "-o expects a path"},
+		{"missing mermaid", []string{"book.md", "--mermaid"}, "--mermaid expects a path"},
+		{"mermaid is not abbreviated", []string{"book.md", "--mer"}, "unknown flag: --mer"},
+		{"mermaid without input", []string{"--mermaid", "path"}, "no input given"},
+		{"mermaid with unknown flag", []string{"--mermaid", "path", "--other", "book.md"}, "unknown flag: --other"},
+		{"does not exist", []string{"gone.md"}, "cannot read \"gone.md\""},
+		{"separate with file", []string{"--separate", "book.md"}, "--separate only works on a directory"},
+		{"empty directory", []string{"empty"}, "directory \"empty\" contains no Markdown files"},
+		{"file target is directory", []string{"book.md", "-o", "targetdir"}, "-o points to a directory, but a file name is required here"},
+		{"separate target is file", []string{"wiki", "--separate", "-o", "target.pdf"}, "-o points to a file, but --separate requires a directory"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := Parse(test.args, fs)
 			if err == nil || !strings.Contains(err.Error(), test.text) {
-				t.Fatalf("fout = %v, wil %q", err, test.text)
+				t.Fatalf("error = %v, want %q", err, test.text)
 			}
 		})
 	}
@@ -126,17 +126,17 @@ func TestParseUnderscoredNames(t *testing.T) {
 		plan Plan
 		text string
 	}{
-		{"samengevoegd slaat navigatie over", []string{"wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}}, ""},
-		{"los slaat navigatie over", []string{"--los", "wiki"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "")}, ""},
-		{"alleen navigatie geeft fout", []string{"navigatie"}, Plan{}, "map \"navigatie\" bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)"},
-		{"expliciet navigatiebestand", []string{"_Footer.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"_Footer.md"}, Target: "_Footer.pdf"}}}, ""},
+		{"merged skips navigation", []string{"wiki"}, Plan{Mode: ModeMerged, Tasks: []Task{{Sources: wikiSources("wiki"), Target: "wiki.pdf"}}}, ""},
+		{"separate skips navigation", []string{"--separate", "wiki"}, Plan{Mode: ModeSeparate, Tasks: separateTasks("wiki", "")}, ""},
+		{"only navigation returns an error", []string{"navigation"}, Plan{}, "directory \"navigation\" contains no Markdown files (names starting with _ are skipped)"},
+		{"explicit navigation file", []string{"_Footer.md"}, Plan{Mode: ModeSingle, Tasks: []Task{{Sources: []string{"_Footer.md"}, Target: "_Footer.pdf"}}}, ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			plan, err := Parse(test.args, fs)
 			if test.text != "" {
 				if err == nil || err.Error() != test.text {
-					t.Fatalf("fout = %v, wil %q", err, test.text)
+					t.Fatalf("error = %v, want %q", err, test.text)
 				}
 				return
 			}
@@ -144,13 +144,13 @@ func TestParseUnderscoredNames(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(plan, test.plan) {
-				t.Errorf("plan = %#v, wil %#v", plan, test.plan)
+				t.Errorf("plan = %#v, want %#v", plan, test.plan)
 			}
 			if test.plan.Mode == ModeMerged && len(plan.Tasks[0].Sources) != 11 {
-				t.Errorf("aantal bronnen = %d, wil 11", len(plan.Tasks[0].Sources))
+				t.Errorf("source count = %d, want 11", len(plan.Tasks[0].Sources))
 			}
 			if test.plan.Mode == ModeSeparate && len(plan.Tasks) != 11 {
-				t.Errorf("aantal taken = %d, wil 11", len(plan.Tasks))
+				t.Errorf("task count = %d, want 11", len(plan.Tasks))
 			}
 		})
 	}
@@ -168,34 +168,34 @@ func TestParseHelpAndVersion(t *testing.T) {
 	} {
 		_, err := Parse(test.args, fs)
 		if !errors.Is(err, test.want) {
-			t.Errorf("Plannen(%q): %v, wil %v", test.args, err, test.want)
+			t.Errorf("Plan(%q): %v, want %v", test.args, err, test.want)
 		}
 	}
 }
 
 func TestOSFileSystem(t *testing.T) {
 	dirName := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dirName, "bestand"), []byte("inhoud"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dirName, "file"), []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fs := OSFileSystem{}
 	isDir, err := fs.Stat(dirName)
 	if err != nil || !isDir {
-		t.Fatalf("Bestaat(map) = %v, %v", isDir, err)
+		t.Fatalf("Stat(directory) = %v, %v", isDir, err)
 	}
-	isDir, err = fs.Stat(filepath.Join(dirName, "bestand"))
+	isDir, err = fs.Stat(filepath.Join(dirName, "file"))
 	if err != nil || isDir {
-		t.Fatalf("Bestaat(bestand) = %v, %v", isDir, err)
+		t.Fatalf("Stat(file) = %v, %v", isDir, err)
 	}
 	names, err := fs.ReadDir(dirName)
-	if err != nil || !reflect.DeepEqual(names, []string{"bestand"}) {
-		t.Fatalf("LeesMap = %q, %v", names, err)
+	if err != nil || !reflect.DeepEqual(names, []string{"file"}) {
+		t.Fatalf("ReadDir = %q, %v", names, err)
 	}
 }
 
 func wikiSources(dirName string) []string {
 	return []string{
-		filepath.Join(dirName, "10.md"), filepath.Join(dirName, "2.md"), filepath.Join(dirName, "A.md"), filepath.Join(dirName, "B.md"), filepath.Join(dirName, "a.MD"), filepath.Join(dirName, "b.md"), filepath.Join(dirName, "eind.md"), filepath.Join(dirName, "hoofdstuk.md"), filepath.Join(dirName, "index.md"), filepath.Join(dirName, "laatste.md"), filepath.Join(dirName, "z.md"),
+		filepath.Join(dirName, "10.md"), filepath.Join(dirName, "2.md"), filepath.Join(dirName, "A.md"), filepath.Join(dirName, "B.md"), filepath.Join(dirName, "a.MD"), filepath.Join(dirName, "b.md"), filepath.Join(dirName, "chapter.md"), filepath.Join(dirName, "end.md"), filepath.Join(dirName, "index.md"), filepath.Join(dirName, "last.md"), filepath.Join(dirName, "z.md"),
 	}
 }
 

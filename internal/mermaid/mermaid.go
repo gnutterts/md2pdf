@@ -35,7 +35,7 @@ func Choose(flag, environment string) Renderer {
 	if path == "" {
 		path = "mmdc"
 	}
-	if path == "uit" || path == "none" {
+	if path == "off" || path == "none" {
 		path = ""
 	}
 	return Renderer{Path: path}
@@ -44,22 +44,22 @@ func Choose(flag, environment string) Renderer {
 // ToPNG renders the diagram text and returns the PNG bytes.
 func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	if !r.Available() {
-		return nil, errors.New("mermaid-renderer is uitgeschakeld")
+		return nil, errors.New("mermaid renderer is disabled")
 	}
 
 	path, err := exec.LookPath(r.Path)
 	if err != nil {
 		if info, statErr := os.Stat(r.Path); statErr == nil && (info.IsDir() || info.Mode()&0o111 == 0) {
-			return nil, errors.New("mermaid-renderer is niet uitvoerbaar")
+			return nil, errors.New("mermaid renderer is not executable")
 		}
-		return nil, fmt.Errorf("mermaid-renderer bestaat niet: %w", err)
+		return nil, fmt.Errorf("mermaid renderer does not exist: %w", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("kan mermaid-renderer niet controleren: %w", err)
+		return nil, fmt.Errorf("cannot check mermaid renderer: %w", err)
 	}
 	if info.IsDir() || info.Mode()&0o111 == 0 {
-		return nil, errors.New("mermaid-renderer is niet uitvoerbaar")
+		return nil, errors.New("mermaid renderer is not executable")
 	}
 
 	timeout := r.Timeout
@@ -68,14 +68,14 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	}
 	tempDir, err := os.MkdirTemp("", "md2pdf-mermaid-")
 	if err != nil {
-		return nil, fmt.Errorf("kan tijdelijke map niet maken: %w", err)
+		return nil, fmt.Errorf("cannot create temporary directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
 	input := filepath.Join(tempDir, "diagram.mmd")
 	output := filepath.Join(tempDir, "diagram.png")
 	if err := os.WriteFile(input, []byte(diagram), 0o600); err != nil {
-		return nil, fmt.Errorf("kan tijdelijk diagram niet schrijven: %w", err)
+		return nil, fmt.Errorf("cannot write temporary diagram: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -85,23 +85,23 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("mermaid-renderer timeout: %w", ctx.Err())
+			return nil, fmt.Errorf("mermaid renderer timed out: %w", ctx.Err())
 		}
-		return nil, fmt.Errorf("mermaid-renderer faalde: %s", lastLine(stderr.String()))
+		return nil, fmt.Errorf("mermaid renderer failed: %s", lastLine(stderr.String()))
 	}
 	if ctx.Err() != nil {
-		return nil, fmt.Errorf("mermaid-renderer timeout: %w", ctx.Err())
+		return nil, fmt.Errorf("mermaid renderer timed out: %w", ctx.Err())
 	}
 
 	png, err := os.ReadFile(output)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, errors.New("uitvoerbestand ontbreekt")
+			return nil, errors.New("output file is missing")
 		}
-		return nil, fmt.Errorf("kan uitvoerbestand niet lezen: %w", err)
+		return nil, fmt.Errorf("cannot read output file: %w", err)
 	}
 	if len(png) == 0 {
-		return nil, errors.New("uitvoerbestand is leeg")
+		return nil, errors.New("output file is empty")
 	}
 	return png, nil
 }

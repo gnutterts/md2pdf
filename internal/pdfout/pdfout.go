@@ -96,7 +96,7 @@ func (v documentCanvas) Diagram(png []byte) error {
 		return err
 	}
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
-		return errors.New("ongeldige PNG voor diagram")
+		return errors.New("invalid PNG for diagram")
 	}
 	width := min(info.Width(), v.contentWidth())
 	height := info.Height() * width / info.Width()

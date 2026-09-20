@@ -68,13 +68,13 @@ func (OSFileSystem) ReadDir(path string) ([]string, error) {
 
 var (
 	// ErrHelp asks the entry point to print the usage text.
-	ErrHelp = errors.New("hulp gevraagd")
+	ErrHelp = errors.New("help requested")
 	// ErrVersion asks the entry point to print the version.
-	ErrVersion = errors.New("versie gevraagd")
+	ErrVersion = errors.New("version requested")
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Gebruik: md2pdf [-o pad] [--los|-l] [--mermaid pad] <bestand-of-map>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -83,16 +83,16 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 		return Plan{}, err
 	}
 	if len(positions) == 0 {
-		return Plan{}, fmt.Errorf("geen invoer opgegeven\n%s", Usage)
+		return Plan{}, fmt.Errorf("no input given\n%s", Usage)
 	}
 	if len(positions) != 1 {
-		return Plan{}, errors.New("precies één invoerpad is vereist")
+		return Plan{}, errors.New("exactly one input path is required")
 	}
 
 	input := positions[0]
 	isDir, err := fs.Stat(input)
 	if err != nil {
-		return Plan{}, fmt.Errorf("kan %q niet lezen: %w", input, err)
+		return Plan{}, fmt.Errorf("cannot read %q: %w", input, err)
 	}
 	if !isDir {
 		return planFile(input, output, mermaid, separate, fs)
@@ -113,17 +113,17 @@ func parseArgs(args []string) (bool, string, string, []string, error) {
 			return false, "", "", nil, ErrHelp
 		case "--version":
 			return false, "", "", nil, ErrVersion
-		case "--los", "-l":
+		case "--separate", "-s":
 			separate = true
 		case "-o":
 			if i+1 == len(args) {
-				return false, "", "", nil, errors.New("-o verwacht een pad")
+				return false, "", "", nil, errors.New("-o expects a path")
 			}
 			i++
 			output = args[i]
 		case "--mermaid":
 			if i+1 == len(args) {
-				return false, "", "", nil, errors.New("--mermaid verwacht een pad")
+				return false, "", "", nil, errors.New("--mermaid expects a path")
 			}
 			i++
 			mermaid = args[i]
@@ -132,7 +132,7 @@ func parseArgs(args []string) (bool, string, string, []string, error) {
 			i = len(args)
 		default:
 			if strings.HasPrefix(arg, "-") {
-				return false, "", "", nil, fmt.Errorf("onbekende vlag: %s", arg)
+				return false, "", "", nil, fmt.Errorf("unknown flag: %s", arg)
 			}
 			positions = append(positions, arg)
 		}
@@ -142,7 +142,7 @@ func parseArgs(args []string) (bool, string, string, []string, error) {
 
 func planFile(input, output, mermaid string, separate bool, fs FileSystem) (Plan, error) {
 	if separate {
-		return Plan{}, errors.New("--los werkt alleen op een map")
+		return Plan{}, errors.New("--separate only works on a directory")
 	}
 	if output == "" {
 		output = pdfName(input)
@@ -184,7 +184,7 @@ func planDir(input, output, mermaid string, separate bool, fs FileSystem) (Plan,
 func markdownFiles(dirName string, fs FileSystem) ([]string, error) {
 	names, err := fs.ReadDir(dirName)
 	if err != nil {
-		return nil, fmt.Errorf("kan map %q niet lezen: %w", dirName, err)
+		return nil, fmt.Errorf("cannot read directory %q: %w", dirName, err)
 	}
 	var markdown []string
 	var hasMarkdown bool
@@ -199,9 +199,9 @@ func markdownFiles(dirName string, fs FileSystem) ([]string, error) {
 	sort.Strings(markdown)
 	if len(markdown) == 0 {
 		if hasMarkdown {
-			return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)", dirName)
+			return nil, fmt.Errorf("directory %q contains no Markdown files (names starting with _ are skipped)", dirName)
 		}
-		return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden", dirName)
+		return nil, fmt.Errorf("directory %q contains no Markdown files", dirName)
 	}
 	sources := make([]string, len(markdown))
 	for i, name := range markdown {
@@ -213,10 +213,10 @@ func markdownFiles(dirName string, fs FileSystem) ([]string, error) {
 func fileTarget(target string, fs FileSystem) error {
 	isDir, err := fs.Stat(target)
 	if err == nil && isDir {
-		return errors.New("-o verwijst naar een map, maar hier is een bestandsnaam nodig")
+		return errors.New("-o points to a directory, but a file name is required here")
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("kan uitvoerdoel %q niet lezen: %w", target, err)
+		return fmt.Errorf("cannot read output target %q: %w", target, err)
 	}
 	return nil
 }
@@ -224,10 +224,10 @@ func fileTarget(target string, fs FileSystem) error {
 func dirTarget(target string, fs FileSystem) error {
 	isDir, err := fs.Stat(target)
 	if err == nil && !isDir {
-		return errors.New("-o verwijst naar een bestand, maar bij --los is een map nodig")
+		return errors.New("-o points to a file, but --separate requires a directory")
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("kan uitvoerdoel %q niet lezen: %w", target, err)
+		return fmt.Errorf("cannot read output target %q: %w", target, err)
 	}
 	return nil
 }

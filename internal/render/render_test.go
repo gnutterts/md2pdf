@@ -26,27 +26,27 @@ type fakeCanvas struct {
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
 func (n *fakeCanvas) Style(f string, v, c bool, g float64) {
 	n.style = activeStyle{family: f, size: g, bold: v, italic: c}
-	n.calls = append(n.calls, "stijl:"+n.style.string())
+	n.calls = append(n.calls, "style:"+n.style.string())
 }
 func (n *fakeCanvas) Text(s string) {
-	n.calls = append(n.calls, "tekst:"+s+":"+n.style.string())
+	n.calls = append(n.calls, "text:"+s+":"+n.style.string())
 }
 func (n *fakeCanvas) Link(s, u string) {
 	n.calls = append(n.calls, "link:"+s+":"+u+":"+n.style.string())
 }
 func (n *fakeCanvas) LineBreak(h float64) {
-	n.calls = append(n.calls, fmt.Sprintf("einde:%g", h))
+	n.calls = append(n.calls, fmt.Sprintf("end:%g", h))
 }
-func (n *fakeCanvas) Indent(p float64) { n.calls = append(n.calls, "inspringen") }
-func (n *fakeCanvas) HangingIndent()   { n.calls = append(n.calls, "hangend") }
+func (n *fakeCanvas) Indent(p float64) { n.calls = append(n.calls, "indent") }
+func (n *fakeCanvas) HangingIndent()   { n.calls = append(n.calls, "hanging") }
 func (n *fakeCanvas) CodeBlock(r []string) {
 	n.calls = append(n.calls, "code:"+strings.Join(r, ","))
 }
 func (n *fakeCanvas) Diagram([]byte) error { n.calls = append(n.calls, "diagram"); return nil }
-func (n *fakeCanvas) Rule()                { n.calls = append(n.calls, "streep") }
+func (n *fakeCanvas) Rule()                { n.calls = append(n.calls, "rule") }
 func (n *fakeCanvas) Table(rows []markdown.Row) {
 	n.tables = append(n.tables, rows)
-	n.calls = append(n.calls, fmt.Sprintf("tabel:%d", len(rows)))
+	n.calls = append(n.calls, fmt.Sprintf("table:%d", len(rows)))
 }
 func (n *fakeCanvas) Err() error { return nil }
 func (s activeStyle) string() string {
@@ -59,9 +59,9 @@ func TestDrawMermaidFallback(t *testing.T) {
 		wantDiagram  bool
 		warnings     int
 	}{
-		{"gelukt", "#!/bin/sh\nprintf png > \"$4\"\n", true, 0},
-		{"faalt", "#!/bin/sh\nexit 1\n", false, 1},
-		{"uit", "", false, 0},
+		{"succeeds", "#!/bin/sh\nprintf png > \"$4\"\n", true, 0},
+		{"fails", "#!/bin/sh\nexit 1\n", false, 1},
+		{"off", "", false, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			canvas := &fakeCanvas{}
@@ -81,7 +81,7 @@ func TestDrawMermaidFallback(t *testing.T) {
 			hasDiagram := contains(canvas.calls, "diagram")
 			hasCode := contains(canvas.calls, "code:graph TD,A-->B")
 			if hasDiagram != test.wantDiagram || hasCode == test.wantDiagram || warnings != test.warnings {
-				t.Fatalf("aanroepen=%v, waarschuwingen=%d", canvas.calls, warnings)
+				t.Fatalf("calls=%v, warnings=%d", canvas.calls, warnings)
 			}
 		})
 	}
@@ -115,11 +115,11 @@ func TestDrawOrderAndStyles(t *testing.T) {
 		blocks []markdown.Block
 		want   []string
 	}{
-		{"kop en alinea", []markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}, {Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "tekst"}}}}, []string{"stijl:Helvetica:B:20", "tekst:Titel:Helvetica:B:20", "stijl:Helvetica::11", "tekst:tekst:Helvetica::11"}},
-		{"geneste lijst", []markdown.Block{{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: "binnen"}}}}, []string{"inspringen", "tekst:• :Helvetica::11", "tekst:binnen:Helvetica::11", "inspringen"}},
-		{"codeblok", []markdown.Block{{Kind: markdown.CodeBlock, Lines: []string{"x"}}}, []string{"inspringen", "stijl:Courier::9.5", "code:x", "inspringen"}},
-		{"link", []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "site", URL: "https://x"}}}}, []string{"stijl:Helvetica::11", "link:site:https://x:Helvetica::11"}},
-		{"citaat", []markdown.Block{{Kind: markdown.Quote, Spans: []markdown.Span{{Text: "woord"}}}}, []string{"inspringen", "stijl:Helvetica:I:11", "tekst:woord:Helvetica:I:11", "inspringen"}},
+		{"heading and paragraph", []markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}, {Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "text"}}}}, []string{"style:Helvetica:B:20", "text:Titel:Helvetica:B:20", "style:Helvetica::11", "text:text:Helvetica::11"}},
+		{"nested list", []markdown.Block{{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: "inside"}}}}, []string{"indent", "text:• :Helvetica::11", "text:inside:Helvetica::11", "indent"}},
+		{"code block", []markdown.Block{{Kind: markdown.CodeBlock, Lines: []string{"x"}}}, []string{"indent", "style:Courier::9.5", "code:x", "indent"}},
+		{"link", []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "site", URL: "https://x"}}}}, []string{"style:Helvetica::11", "link:site:https://x:Helvetica::11"}},
+		{"quote", []markdown.Block{{Kind: markdown.Quote, Spans: []markdown.Span{{Text: "woord"}}}}, []string{"indent", "style:Helvetica:I:11", "text:woord:Helvetica:I:11", "indent"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,20 +141,20 @@ func TestDrawTable(t *testing.T) {
 	if err := Draw(blocks, canvas, Options{}); err != nil {
 		t.Fatal(err)
 	}
-	tabelAanroepen := 0
+	tableAanroepen := 0
 	for _, call := range canvas.calls {
-		if strings.HasPrefix(call, "tabel:") {
-			tabelAanroepen++
+		if strings.HasPrefix(call, "table:") {
+			tableAanroepen++
 		}
 	}
-	if tabelAanroepen != 1 {
-		t.Fatalf("Tabel is %d keer aangeroepen: %q", tabelAanroepen, canvas.calls)
+	if tableAanroepen != 1 {
+		t.Fatalf("Tabel is %d keer aangeroepen: %q", tableAanroepen, canvas.calls)
 	}
 	if len(canvas.tables) != 1 || len(canvas.tables[0]) != 2 {
-		t.Fatalf("Tabel kreeg %d rijen, wil 2: %v", len(canvas.tables), canvas.tables)
+		t.Fatalf("Tabel received %d rows, want 2: %v", len(canvas.tables), canvas.tables)
 	}
 	if !canvas.tables[0][0].Header || canvas.tables[0][1].Header {
-		t.Fatalf("kopregel niet als eerste rij: %v", canvas.tables[0])
+		t.Fatalf("header row is not the first row: %v", canvas.tables[0])
 	}
 }
 
@@ -163,7 +163,7 @@ func TestLineHeightFollowsHeadingSize(t *testing.T) {
 	if err := Draw([]markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}}, canvas, Options{}); err != nil {
 		t.Fatal(err)
 	}
-	checkOrder(t, canvas.calls, []string{"einde:27"})
+	checkOrder(t, canvas.calls, []string{"end:27"})
 }
 
 func TestTextStyles(t *testing.T) {
@@ -172,13 +172,13 @@ func TestTextStyles(t *testing.T) {
 		block markdown.Block
 		want  string
 	}{
-		{"kop niveau 1", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Een"}}}, "tekst:Een:Helvetica:B:20"},
-		{"kop niveau 2", markdown.Block{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Twee"}}}, "tekst:Twee:Helvetica:B:16"},
-		{"kop niveau 3", markdown.Block{Kind: markdown.Heading, Level: 3, Spans: []markdown.Span{{Text: "Drie"}}}, "tekst:Drie:Helvetica:B:13"},
-		{"kop niveau 4", markdown.Block{Kind: markdown.Heading, Level: 4, Spans: []markdown.Span{{Text: "Vier"}}}, "tekst:Vier:Helvetica:B:11"},
-		{"vette alinea", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "vet", Bold: true}}}, "tekst:vet:Helvetica:B:11"},
-		{"code in kop", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "code", Code: true}}}, "tekst:code:Courier:B:17"},
-		{"code in alinea", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "code", Code: true}}}, "tekst:code:Courier::9.5"},
+		{"heading level 1", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "One"}}}, "text:One:Helvetica:B:20"},
+		{"heading level 2", markdown.Block{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Two"}}}, "text:Two:Helvetica:B:16"},
+		{"heading level 3", markdown.Block{Kind: markdown.Heading, Level: 3, Spans: []markdown.Span{{Text: "Three"}}}, "text:Three:Helvetica:B:13"},
+		{"heading level 4", markdown.Block{Kind: markdown.Heading, Level: 4, Spans: []markdown.Span{{Text: "Four"}}}, "text:Four:Helvetica:B:11"},
+		{"bold paragraph", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "bold", Bold: true}}}, "text:bold:Helvetica:B:11"},
+		{"code in heading", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "code", Code: true}}}, "text:code:Courier:B:17"},
+		{"code in paragraph", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "code", Code: true}}}, "text:code:Courier::9.5"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -203,7 +203,7 @@ func checkOrder(t *testing.T, got, want []string) {
 			}
 		}
 		if found < 0 {
-			t.Fatalf("%q ontbreekt in %q", expected, got)
+			t.Fatalf("%q is missing in %q", expected, got)
 		}
 		start = found + 1
 	}

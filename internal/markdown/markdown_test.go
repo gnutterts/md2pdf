@@ -11,47 +11,47 @@ func TestParseElements(t *testing.T) {
 		name, source string
 		check        func(*testing.T, []Block)
 	}{
-		{"kop 1", "# Een", func(t *testing.T, b []Block) {
+		{"heading 1", "# One", func(t *testing.T, b []Block) {
 			if b[0].Level != 1 {
 				t.Fatal(b)
 			}
 		}},
-		{"kop 2", "## Twee", func(t *testing.T, b []Block) {
+		{"heading 2", "## Two", func(t *testing.T, b []Block) {
 			if b[0].Level != 2 {
 				t.Fatal(b)
 			}
 		}},
-		{"kop 3", "### Drie", func(t *testing.T, b []Block) {
+		{"heading 3", "### Three", func(t *testing.T, b []Block) {
 			if b[0].Level != 3 {
 				t.Fatal(b)
 			}
 		}},
-		{"kop 4", "#### Vier", func(t *testing.T, b []Block) {
+		{"heading 4", "#### Four", func(t *testing.T, b []Block) {
 			if b[0].Level != 4 {
 				t.Fatal(b)
 			}
 		}},
-		{"kop 5", "##### Vijf", func(t *testing.T, b []Block) {
+		{"heading 5", "##### Five", func(t *testing.T, b []Block) {
 			if b[0].Level != 5 {
 				t.Fatal(b)
 			}
 		}},
-		{"kop 6", "###### Zes", func(t *testing.T, b []Block) {
+		{"heading 6", "###### Six", func(t *testing.T, b []Block) {
 			if b[0].Level != 6 {
 				t.Fatal(b)
 			}
 		}},
-		{"vet", "**sterk**", func(t *testing.T, b []Block) {
+		{"bold", "**sterk**", func(t *testing.T, b []Block) {
 			if !b[0].Spans[0].Bold {
 				t.Fatal(b)
 			}
 		}},
-		{"cursief", "*schuin*", func(t *testing.T, b []Block) {
+		{"italic", "*italic*", func(t *testing.T, b []Block) {
 			if !b[0].Spans[0].Italic {
 				t.Fatal(b)
 			}
 		}},
-		{"vet en cursief", "***sterk schuin***", func(t *testing.T, b []Block) {
+		{"bold and italic", "***sterk italic***", func(t *testing.T, b []Block) {
 			span := b[0].Spans[0]
 			if !span.Bold || !span.Italic {
 				t.Fatal(b)
@@ -67,27 +67,27 @@ func TestParseElements(t *testing.T) {
 				t.Fatal(b)
 			}
 		}},
-		{"geneste lijst", "- buiten\n  - binnen", func(t *testing.T, b []Block) {
+		{"nested list", "- outside\n  - inside", func(t *testing.T, b []Block) {
 			if len(b) != 2 || b[0].Depth != 0 || b[1].Depth != 1 {
 				t.Fatal(b)
 			}
 		}},
-		{"genummerde lijst", "3. drie", func(t *testing.T, b []Block) {
+		{"numbered list", "3. three", func(t *testing.T, b []Block) {
 			if !b[0].Ordered || b[0].Number != 3 {
 				t.Fatal(b)
 			}
 		}},
-		{"genummerde lijst vanaf nul", "0. nul", func(t *testing.T, b []Block) {
+		{"numbered list from zero", "0. nul", func(t *testing.T, b []Block) {
 			if !b[0].Ordered || b[0].Number != 0 {
 				t.Fatal(b)
 			}
 		}},
-		{"lijstitem met twee alineas", "- eerste alinea\n\n  tweede alinea", func(t *testing.T, b []Block) {
+		{"list item with two paragraphs", "- first paragraph\n\n  second paragraph", func(t *testing.T, b []Block) {
 			if len(b) != 2 || b[0].Depth != 0 || b[1].Depth != 0 {
 				t.Fatal(b)
 			}
 		}},
-		{"codeblok met taal", "```go\nfmt.Println()\n```", func(t *testing.T, b []Block) {
+		{"code block with language", "```go\nfmt.Println()\n```", func(t *testing.T, b []Block) {
 			if b[0].Kind != CodeBlock || b[0].Language != "go" {
 				t.Fatal(b)
 			}
@@ -97,12 +97,12 @@ func TestParseElements(t *testing.T) {
 				t.Fatal(b)
 			}
 		}},
-		{"citaat", "> woorden", func(t *testing.T, b []Block) {
+		{"quote", "> woorden", func(t *testing.T, b []Block) {
 			if b[0].Kind != Quote {
 				t.Fatal(b)
 			}
 		}},
-		{"breuk", "---", func(t *testing.T, b []Block) {
+		{"rule", "---", func(t *testing.T, b []Block) {
 			if b[0].Kind != Rule {
 				t.Fatal(b)
 			}
@@ -126,34 +126,34 @@ func TestParseREADME(t *testing.T) {
 	}
 	blocks, err := Parse(source)
 	if err != nil || len(blocks) == 0 {
-		t.Fatalf("Ontleed = %d blokken, %v", len(blocks), err)
+		t.Fatalf("Parse = %d blokken, %v", len(blocks), err)
 	}
 }
 
 func TestParseTable(t *testing.T) {
-	source := []byte("| Naam | Waarde |\n|------|--------|\n| een  | 1      |\n| twee | 2      |\n")
+	source := []byte("| Name | Value |\n|------|--------|\n| one  | 1      |\n| two  | 2      |\n")
 	blocks, err := Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(blocks) != 1 || blocks[0].Kind != Table {
-		t.Fatalf("Ontleed leverde geen tabelblok: %v", blocks)
+		t.Fatalf("Parse returned no table block: %v", blocks)
 	}
 	rows := blocks[0].Rows
 	if len(rows) != 3 {
-		t.Fatalf("tabel heeft %d rijen, wil 3: %v", len(rows), rows)
+		t.Fatalf("table heeft %d rows, want 3: %v", len(rows), rows)
 	}
 	if !rows[0].Header || rows[1].Header || rows[2].Header {
-		t.Fatalf("alleen de eerste rij hoort Kop te zijn: %v", rows)
+		t.Fatalf("only the first row should be a header: %v", rows)
 	}
-	want := [][]string{{"Naam", "Waarde"}, {"een", "1"}, {"twee", "2"}}
+	want := [][]string{{"Name", "Value"}, {"one", "1"}, {"two", "2"}}
 	for i, row := range rows {
 		if len(row.Cells) != 2 {
-			t.Fatalf("rij %d heeft %d cellen, wil 2: %v", i, len(row.Cells), row)
+			t.Fatalf("row %d has %d cells, want 2: %v", i, len(row.Cells), row)
 		}
-		for column, cell := range row.Cells {
-			if len(cell.Spans) != 1 || cell.Spans[0].Text != want[i][column] {
-				t.Fatalf("cel %d,%d is %v, wil %q", i, column, cell.Spans, want[i][column])
+		for column, celll := range row.Cells {
+			if len(celll.Spans) != 1 || celll.Spans[0].Text != want[i][column] {
+				t.Fatalf("cell %d,%d is %v, want %q", i, column, celll.Spans, want[i][column])
 			}
 		}
 	}
@@ -167,12 +167,12 @@ func TestParseTableAlignment(t *testing.T) {
 	}
 	rows := blocks[0].Rows
 	if len(rows) == 0 || len(rows[0].Cells) != 3 {
-		t.Fatalf("verwachte drie uitgelijnde cellen: %v", rows)
+		t.Fatalf("expected three aligned cells: %v", rows)
 	}
 	want := []Alignment{AlignLeft, AlignCenter, AlignRight}
 	for column, alignment := range want {
 		if rows[0].Cells[column].Alignment != alignment {
-			t.Fatalf("kolom %d heeft uitlijning %v, wil %v", column, rows[0].Cells[column].Alignment, alignment)
+			t.Fatalf("column %d has alignment %v, want %v", column, rows[0].Cells[column].Alignment, alignment)
 		}
 	}
 }

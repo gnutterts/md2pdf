@@ -23,7 +23,7 @@ func writeScript(t *testing.T, content string) string {
 
 func paths() string {
 	return `
-argumenten="$@"
+arguments="$@"
 in=""
 out=""
 while [ "$#" -gt 0 ]; do
@@ -43,15 +43,15 @@ func TestToPNGSuccessful(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(png) != string(minimalPNG) {
-		t.Fatalf("png = %q, wil %q", png, minimalPNG)
+		t.Fatalf("png = %q, want %q", png, minimalPNG)
 	}
 }
 
 func TestToPNGPassesCorrectArguments(t *testing.T) {
-	data := filepath.Join(t.TempDir(), "gegevens")
+	data := filepath.Join(t.TempDir(), "data")
 	script := writeScript(t, paths()+`{
-printf '%s\n' $argumenten
-printf '%s\n' '--inhoud--'
+printf '%s\n' $arguments
+printf '%s\n' '--content--'
 cat "$in"
 } > `+shellText(data)+`
 printf x > "$out"`)
@@ -64,54 +64,54 @@ printf x > "$out"`)
 		t.Fatal(err)
 	}
 	text := string(content)
-	for _, argument := range []string{"-i\n", "-o\n", "-b\n", "white\n", "-q\n", "--inhoud--\n" + diagram} {
+	for _, argument := range []string{"-i\n", "-o\n", "-b\n", "white\n", "-q\n", "--content--\n" + diagram} {
 		if !strings.Contains(text, argument) {
-			t.Errorf("%q ontbreekt in %q", argument, text)
+			t.Errorf("%q is missing in %q", argument, text)
 		}
 	}
 }
 
 func TestToPNGExitCodeMessage(t *testing.T) {
-	script := writeScript(t, `echo eerste >&2
-echo laatste fout >&2
+	script := writeScript(t, `echo first >&2
+echo last error >&2
 exit 7`)
 	_, err := (Renderer{Path: script}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "laatste fout") {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "last error") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestToPNGMissingOutput(t *testing.T) {
 	script := writeScript(t, "exit 0")
 	_, err := (Renderer{Path: script}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "ontbreekt") {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "is missing") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestToPNGEmptyOutput(t *testing.T) {
 	script := writeScript(t, paths()+`: > "$out"`)
 	_, err := (Renderer{Path: script}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "leeg") {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestToPNGRendererDoesNotExist(t *testing.T) {
 	_, err := (Renderer{Path: filepath.Join(t.TempDir(), "nergens")}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "bestaat niet") {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestToPNGRendererNotExecutable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "geen-uitvoer")
+	path := filepath.Join(t.TempDir(), "no-output")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := (Renderer{Path: path}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "niet uitvoerbaar") {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not executable") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -119,11 +119,11 @@ func TestToPNGTimeout(t *testing.T) {
 	script := writeScript(t, "exec sleep 5")
 	start := time.Now()
 	_, err := (Renderer{Path: script, Timeout: 100 * time.Millisecond}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "timeout") || !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "timed out") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v", err)
 	}
 	if timeout := time.Since(start); timeout >= time.Second {
-		t.Fatalf("timeout duurde %v", timeout)
+		t.Fatalf("timeout took %v", timeout)
 	}
 }
 
@@ -132,11 +132,11 @@ func TestToPNGRemovesFiles(t *testing.T) {
 		name string
 		body string
 	}{
-		{"geslaagd", `printf x > "$out"`},
-		{"mislukt", "echo stuk >&2\nexit 1"},
+		{"succeeds", `printf x > "$out"`},
+		{"fails", "echo broken >&2\nexit 1"},
 	} {
 		t.Run(caseTest.name, func(t *testing.T) {
-			record := filepath.Join(t.TempDir(), "map")
+			record := filepath.Join(t.TempDir(), "directory")
 			script := writeScript(t, paths()+`dirname "$out" > `+shellText(record)+"\n"+caseTest.body)
 			_, _ = (Renderer{Path: script}).ToPNG("")
 			tempDir, err := os.ReadFile(record)
@@ -144,7 +144,7 @@ func TestToPNGRemovesFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(strings.TrimSpace(string(tempDir))); !os.IsNotExist(err) {
-				t.Fatalf("tijdelijke map bestaat nog: %v", err)
+				t.Fatalf("temporary directory still exists: %v", err)
 			}
 		})
 	}
@@ -154,15 +154,15 @@ func TestChoose(t *testing.T) {
 	for _, caseTest := range []struct {
 		name, flag, environment, want string
 	}{
-		{"vlag wint", "vlag", "omgeving", "vlag"},
-		{"omgeving wint", "", "omgeving", "omgeving"},
-		{"standaard", "", "", "mmdc"},
-		{"uit", "uit", "omgeving", ""},
-		{"none", "none", "omgeving", ""},
+		{"flag wins", "flag", "environment", "flag"},
+		{"environment wins", "", "environment", "environment"},
+		{"default", "", "", "mmdc"},
+		{"off", "off", "environment", ""},
+		{"none", "none", "environment", ""},
 	} {
 		t.Run(caseTest.name, func(t *testing.T) {
 			if got := Choose(caseTest.flag, caseTest.environment).Path; got != caseTest.want {
-				t.Fatalf("Pad = %q, wil %q", got, caseTest.want)
+				t.Fatalf("Path = %q, want %q", got, caseTest.want)
 			}
 		})
 	}
@@ -170,11 +170,11 @@ func TestChoose(t *testing.T) {
 
 func TestDisabled(t *testing.T) {
 	if (Renderer{}).Available() {
-		t.Fatal("lege renderer is beschikbaar")
+		t.Fatal("empty renderer is available")
 	}
 	_, err := (Renderer{}).ToPNG("")
-	if err == nil || !strings.Contains(err.Error(), "uitgeschakeld") {
-		t.Fatalf("fout = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
