@@ -80,10 +80,10 @@ func tekenSamengevoegd(taak cli.Taak, opties render.Opties) error {
 	return nil
 }
 
-func leesBlokken(pad string) ([]markdown.Blok, error) {
+func leesBlokken(pad string) ([]markdown.Block, error) {
 	bron, err := os.ReadFile(pad)
 	if err != nil {
 		return nil, fmt.Errorf("kan %q niet lezen: %w", pad, err)
 	}
-	return markdown.Ontleed(bron)
+	return markdown.Parse(bron)
 }

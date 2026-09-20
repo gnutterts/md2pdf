@@ -20,7 +20,7 @@ type actieveStijl struct {
 type nepVel struct {
 	aanroepen []string
 	stijl     actieveStijl
-	tabellen  [][]markdown.Rij
+	tabellen  [][]markdown.Row
 }
 
 func (n *nepVel) NieuwePagina() { n.aanroepen = append(n.aanroepen, "pagina") }
@@ -44,7 +44,7 @@ func (n *nepVel) Codeblok(r []string) {
 }
 func (n *nepVel) Diagram([]byte) error { n.aanroepen = append(n.aanroepen, "diagram"); return nil }
 func (n *nepVel) Streep()              { n.aanroepen = append(n.aanroepen, "streep") }
-func (n *nepVel) Tabel(rijen []markdown.Rij) {
+func (n *nepVel) Tabel(rijen []markdown.Row) {
 	n.tabellen = append(n.tabellen, rijen)
 	n.aanroepen = append(n.aanroepen, fmt.Sprintf("tabel:%d", len(rijen)))
 }
@@ -53,7 +53,7 @@ func (s actieveStijl) string() string {
 	return fmt.Sprintf("%s:%s:%g", s.familie, stijl(s.vet, s.cursief), s.grootte)
 }
 func TestTekenMermaidTerugval(t *testing.T) {
-	blok := []markdown.Blok{{Soort: markdown.Codeblok, Taal: "mermaid", Regels: []string{"graph TD", "A-->B"}}}
+	blok := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}}}
 	for _, test := range []struct {
 		naam, script   string
 		wilDiagram     bool
@@ -71,7 +71,7 @@ func TestTekenMermaidTerugval(t *testing.T) {
 				if err := os.WriteFile(pad, []byte(test.script), 0o755); err != nil {
 					t.Fatal(err)
 				}
-				opties.Mermaid = mermaid.Renderer{Pad: pad}
+				opties.Mermaid = mermaid.Renderer{Path: pad}
 			}
 			waarschuwingen := 0
 			opties.Waarschuw = func(string) { waarschuwingen++ }
@@ -112,14 +112,14 @@ func stijl(v, c bool) string {
 func TestTekenVolgordeEnStijlen(t *testing.T) {
 	tests := []struct {
 		naam    string
-		blokken []markdown.Blok
+		blokken []markdown.Block
 		wil     []string
 	}{
-		{"kop en alinea", []markdown.Blok{{Soort: markdown.Kop, Niveau: 1, Stukken: []markdown.Stuk{{Tekst: "Titel"}}}, {Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "tekst"}}}}, []string{"stijl:Helvetica:B:20", "tekst:Titel:Helvetica:B:20", "stijl:Helvetica::11", "tekst:tekst:Helvetica::11"}},
-		{"geneste lijst", []markdown.Blok{{Soort: markdown.Lijstitem, Diepte: 1, Stukken: []markdown.Stuk{{Tekst: "binnen"}}}}, []string{"inspringen", "tekst:• :Helvetica::11", "tekst:binnen:Helvetica::11", "inspringen"}},
-		{"codeblok", []markdown.Blok{{Soort: markdown.Codeblok, Regels: []string{"x"}}}, []string{"inspringen", "stijl:Courier::9.5", "code:x", "inspringen"}},
-		{"link", []markdown.Blok{{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "site", URL: "https://x"}}}}, []string{"stijl:Helvetica::11", "link:site:https://x:Helvetica::11"}},
-		{"citaat", []markdown.Blok{{Soort: markdown.Citaat, Stukken: []markdown.Stuk{{Tekst: "woord"}}}}, []string{"inspringen", "stijl:Helvetica:I:11", "tekst:woord:Helvetica:I:11", "inspringen"}},
+		{"kop en alinea", []markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}, {Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "tekst"}}}}, []string{"stijl:Helvetica:B:20", "tekst:Titel:Helvetica:B:20", "stijl:Helvetica::11", "tekst:tekst:Helvetica::11"}},
+		{"geneste lijst", []markdown.Block{{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: "binnen"}}}}, []string{"inspringen", "tekst:• :Helvetica::11", "tekst:binnen:Helvetica::11", "inspringen"}},
+		{"codeblok", []markdown.Block{{Kind: markdown.CodeBlock, Lines: []string{"x"}}}, []string{"inspringen", "stijl:Courier::9.5", "code:x", "inspringen"}},
+		{"link", []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "site", URL: "https://x"}}}}, []string{"stijl:Helvetica::11", "link:site:https://x:Helvetica::11"}},
+		{"citaat", []markdown.Block{{Kind: markdown.Quote, Spans: []markdown.Span{{Text: "woord"}}}}, []string{"inspringen", "stijl:Helvetica:I:11", "tekst:woord:Helvetica:I:11", "inspringen"}},
 	}
 	for _, test := range tests {
 		t.Run(test.naam, func(t *testing.T) {
@@ -133,9 +133,9 @@ func TestTekenVolgordeEnStijlen(t *testing.T) {
 }
 
 func TestTekenTabel(t *testing.T) {
-	blokken := []markdown.Blok{{Soort: markdown.Tabel, Rijen: []markdown.Rij{
-		{Kop: true, Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: "A"}}}, {Stukken: []markdown.Stuk{{Tekst: "B"}}}}},
-		{Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: "1"}}}, {Stukken: []markdown.Stuk{{Tekst: "2"}}}}},
+	blokken := []markdown.Block{{Kind: markdown.Table, Rows: []markdown.Row{
+		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "A"}}}, {Spans: []markdown.Span{{Text: "B"}}}}},
+		{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "1"}}}, {Spans: []markdown.Span{{Text: "2"}}}}},
 	}}}
 	vel := &nepVel{}
 	if err := Teken(blokken, vel, Opties{}); err != nil {
@@ -153,14 +153,14 @@ func TestTekenTabel(t *testing.T) {
 	if len(vel.tabellen) != 1 || len(vel.tabellen[0]) != 2 {
 		t.Fatalf("Tabel kreeg %d rijen, wil 2: %v", len(vel.tabellen), vel.tabellen)
 	}
-	if !vel.tabellen[0][0].Kop || vel.tabellen[0][1].Kop {
+	if !vel.tabellen[0][0].Header || vel.tabellen[0][1].Header {
 		t.Fatalf("kopregel niet als eerste rij: %v", vel.tabellen[0])
 	}
 }
 
 func TestRegelhoogteVolgtKopgrootte(t *testing.T) {
 	vel := &nepVel{}
-	if err := Teken([]markdown.Blok{{Soort: markdown.Kop, Niveau: 1, Stukken: []markdown.Stuk{{Tekst: "Titel"}}}}, vel, Opties{}); err != nil {
+	if err := Teken([]markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}}, vel, Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	controleerVolgorde(t, vel.aanroepen, []string{"einde:27"})
@@ -169,21 +169,21 @@ func TestRegelhoogteVolgtKopgrootte(t *testing.T) {
 func TestTekstStijlen(t *testing.T) {
 	tests := []struct {
 		naam string
-		blok markdown.Blok
+		blok markdown.Block
 		wil  string
 	}{
-		{"kop niveau 1", markdown.Blok{Soort: markdown.Kop, Niveau: 1, Stukken: []markdown.Stuk{{Tekst: "Een"}}}, "tekst:Een:Helvetica:B:20"},
-		{"kop niveau 2", markdown.Blok{Soort: markdown.Kop, Niveau: 2, Stukken: []markdown.Stuk{{Tekst: "Twee"}}}, "tekst:Twee:Helvetica:B:16"},
-		{"kop niveau 3", markdown.Blok{Soort: markdown.Kop, Niveau: 3, Stukken: []markdown.Stuk{{Tekst: "Drie"}}}, "tekst:Drie:Helvetica:B:13"},
-		{"kop niveau 4", markdown.Blok{Soort: markdown.Kop, Niveau: 4, Stukken: []markdown.Stuk{{Tekst: "Vier"}}}, "tekst:Vier:Helvetica:B:11"},
-		{"vette alinea", markdown.Blok{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "vet", Vet: true}}}, "tekst:vet:Helvetica:B:11"},
-		{"code in kop", markdown.Blok{Soort: markdown.Kop, Niveau: 1, Stukken: []markdown.Stuk{{Tekst: "code", Code: true}}}, "tekst:code:Courier:B:17"},
-		{"code in alinea", markdown.Blok{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "code", Code: true}}}, "tekst:code:Courier::9.5"},
+		{"kop niveau 1", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Een"}}}, "tekst:Een:Helvetica:B:20"},
+		{"kop niveau 2", markdown.Block{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Twee"}}}, "tekst:Twee:Helvetica:B:16"},
+		{"kop niveau 3", markdown.Block{Kind: markdown.Heading, Level: 3, Spans: []markdown.Span{{Text: "Drie"}}}, "tekst:Drie:Helvetica:B:13"},
+		{"kop niveau 4", markdown.Block{Kind: markdown.Heading, Level: 4, Spans: []markdown.Span{{Text: "Vier"}}}, "tekst:Vier:Helvetica:B:11"},
+		{"vette alinea", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "vet", Bold: true}}}, "tekst:vet:Helvetica:B:11"},
+		{"code in kop", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "code", Code: true}}}, "tekst:code:Courier:B:17"},
+		{"code in alinea", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "code", Code: true}}}, "tekst:code:Courier::9.5"},
 	}
 	for _, test := range tests {
 		t.Run(test.naam, func(t *testing.T) {
 			vel := &nepVel{}
-			if err := Teken([]markdown.Blok{test.blok}, vel, Opties{}); err != nil {
+			if err := Teken([]markdown.Block{test.blok}, vel, Opties{}); err != nil {
 				t.Fatal(err)
 			}
 			controleerVolgorde(t, vel.aanroepen, []string{test.wil})

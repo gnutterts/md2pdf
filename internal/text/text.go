@@ -1,10 +1,10 @@
-// Package tekst bevat omzettingen voor de beperkte tekenreeks van PDF-kernfonts.
-package tekst
+// Package text contains conversions for the limited character set of PDF core fonts.
+package text
 
 import "strings"
 
-// NaarCP1252 vervangt tekens die de PDF-kernfonts niet kunnen schrijven.
-func NaarCP1252(s string) string {
+// ToCP1252 replaces characters that PDF core fonts cannot write.
+func ToCP1252(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch r {
@@ -31,8 +31,8 @@ func NaarCP1252(s string) string {
 		default:
 			if r >= 0x20 && r <= 0x7e || r >= 0xa0 && r <= 0xff {
 				b.WriteByte(byte(r))
-			} else if waarde, ok := cp1252(r); ok {
-				b.WriteByte(waarde)
+			} else if value, ok := inCP1252(r); ok {
+				b.WriteByte(value)
 			} else {
 				b.WriteByte('?')
 			}
@@ -41,7 +41,7 @@ func NaarCP1252(s string) string {
 	return b.String()
 }
 
-func cp1252(r rune) (byte, bool) {
+func inCP1252(r rune) (byte, bool) {
 	switch r {
 	case 0x20ac:
 		return 0x80, true

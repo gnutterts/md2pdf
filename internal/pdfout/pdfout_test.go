@@ -53,7 +53,7 @@ func TestDiagramOngeldigePNGGeeftFout(t *testing.T) {
 func TestSchrijfPDF(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "alinea.pdf")
 	document := Nieuw()
-	if err := render.Teken([]markdown.Blok{{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "Een alinea."}}}}, document.Vel(), render.Opties{}); err != nil {
+	if err := render.Teken([]markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "Een alinea."}}}}, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := document.Schrijf(pad); err != nil {
@@ -71,7 +71,7 @@ func TestSchrijfPDF(t *testing.T) {
 func TestCP1252StaatInInhoudsstroom(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "tekens.pdf")
 	document := Nieuw()
-	blokken := []markdown.Blok{{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "café —"}}}}
+	blokken := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "café —"}}}}
 	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
 	}
@@ -94,9 +94,9 @@ func TestCP1252StaatInInhoudsstroom(t *testing.T) {
 func TestLangLijstitemBlijftIngesprongen(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "lijst.pdf")
 	document := Nieuw()
-	blokken := []markdown.Blok{
-		{Soort: markdown.Lijstitem, Diepte: 1, Stukken: []markdown.Stuk{{Tekst: strings.Repeat("een lang lijstitem ", 40)}}},
-		{Soort: markdown.Alinea, Stukken: []markdown.Stuk{{Tekst: "einde"}}},
+	blokken := []markdown.Block{
+		{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: strings.Repeat("een lang lijstitem ", 40)}}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "einde"}}},
 	}
 	if err := render.Teken(blokken, document.Vel(), render.Opties{}); err != nil {
 		t.Fatal(err)
@@ -129,18 +129,18 @@ func TestLangLijstitemBlijftIngesprongen(t *testing.T) {
 func TestTabelTekstStaatInInhoudsstroom(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "tabel.pdf")
 	document := Nieuw()
-	rijen := []markdown.Rij{
-		{Kop: true, Cellen: []markdown.Cel{
-			{Stukken: []markdown.Stuk{{Tekst: "Naam"}}},
-			{Stukken: []markdown.Stuk{{Tekst: "Waarde"}}},
+	rijen := []markdown.Row{
+		{Header: true, Cells: []markdown.Cell{
+			{Spans: []markdown.Span{{Text: "Naam"}}},
+			{Spans: []markdown.Span{{Text: "Waarde"}}},
 		}},
-		{Cellen: []markdown.Cel{
-			{Stukken: []markdown.Stuk{{Tekst: "een"}}},
-			{Stukken: []markdown.Stuk{{Tekst: "1"}}},
+		{Cells: []markdown.Cell{
+			{Spans: []markdown.Span{{Text: "een"}}},
+			{Spans: []markdown.Span{{Text: "1"}}},
 		}},
-		{Cellen: []markdown.Cel{
-			{Stukken: []markdown.Stuk{{Tekst: "twee"}}},
-			{Stukken: []markdown.Stuk{{Tekst: "2"}}},
+		{Cells: []markdown.Cell{
+			{Spans: []markdown.Span{{Text: "twee"}}},
+			{Spans: []markdown.Span{{Text: "2"}}},
 		}},
 	}
 	document.Vel().Tabel(rijen)
@@ -163,9 +163,9 @@ func TestTabelTekstStaatInInhoudsstroom(t *testing.T) {
 func TestTabelTeBreedSchrijftZonderFout(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "breed.pdf")
 	document := Nieuw()
-	rijen := []markdown.Rij{
-		{Kop: true, Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: strings.Repeat("kop ", 200)}}}}},
-		{Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: strings.Repeat("breed ", 200)}}}}},
+	rijen := []markdown.Row{
+		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("kop ", 200)}}}}},
+		{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("breed ", 200)}}}}},
 	}
 	document.Vel().Tabel(rijen)
 	if fout := document.Vel().Fout(); fout != nil {
@@ -182,11 +182,11 @@ func TestTabelTeBreedSchrijftZonderFout(t *testing.T) {
 func TestTabelOverPaginasHerhaaltKopregel(t *testing.T) {
 	pad := filepath.Join(t.TempDir(), "paginas.pdf")
 	document := Nieuw()
-	rijen := []markdown.Rij{
-		{Kop: true, Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: "Koptekst"}}}}},
+	rijen := []markdown.Row{
+		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "Koptekst"}}}}},
 	}
 	for i := 0; i < 60; i++ {
-		rijen = append(rijen, markdown.Rij{Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: fmt.Sprintf("rij%d", i)}}}}})
+		rijen = append(rijen, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: fmt.Sprintf("rij%d", i)}}}}})
 	}
 	document.Vel().Tabel(rijen)
 	if err := document.Schrijf(pad); err != nil {
@@ -275,7 +275,7 @@ func TestRenderREADMENaarPDF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blokken, err := markdown.Ontleed(bron)
+	blokken, err := markdown.Parse(bron)
 	if err != nil {
 		t.Fatal(err)
 	}

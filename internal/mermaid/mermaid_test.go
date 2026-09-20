@@ -10,18 +10,18 @@ import (
 	"time"
 )
 
-var minimalePNG = []byte{'\x89', 'P', 'N', 'G', '\r', '\n', '\x1a', '\n', 'v', 'u', 'l'}
+var minimalPNG = []byte{'\x89', 'P', 'N', 'G', '\r', '\n', '\x1a', '\n', 'v', 'u', 'l'}
 
-func schrijfScript(t *testing.T, inhoud string) string {
+func writeScript(t *testing.T, content string) string {
 	t.Helper()
-	pad := filepath.Join(t.TempDir(), "renderer.sh")
-	if err := os.WriteFile(pad, []byte("#!/bin/sh\n"+inhoud), 0o700); err != nil {
+	path := filepath.Join(t.TempDir(), "renderer.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return pad
+	return path
 }
 
-func paden() string {
+func paths() string {
 	return `
 argumenten="$@"
 in=""
@@ -36,123 +36,123 @@ done
 `
 }
 
-func TestNaarPNGGeslaagd(t *testing.T) {
-	script := schrijfScript(t, paden()+`printf '\211PNG\r\n\032\nvul' > "$out"`)
-	png, err := (Renderer{Pad: script}).NaarPNG("graph TD\n A-->B")
+func TestToPNGSuccessful(t *testing.T) {
+	script := writeScript(t, paths()+`printf '\211PNG\r\n\032\nvul' > "$out"`)
+	png, err := (Renderer{Path: script}).ToPNG("graph TD\n A-->B")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(png) != string(minimalePNG) {
-		t.Fatalf("png = %q, wil %q", png, minimalePNG)
+	if string(png) != string(minimalPNG) {
+		t.Fatalf("png = %q, wil %q", png, minimalPNG)
 	}
 }
 
-func TestNaarPNGGeeftJuisteArgumentenDoor(t *testing.T) {
-	gegevens := filepath.Join(t.TempDir(), "gegevens")
-	script := schrijfScript(t, paden()+`{
+func TestToPNGPassesCorrectArguments(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "gegevens")
+	script := writeScript(t, paths()+`{
 printf '%s\n' $argumenten
 printf '%s\n' '--inhoud--'
 cat "$in"
-} > `+shellTekst(gegevens)+`
+} > `+shellText(data)+`
 printf x > "$out"`)
 	diagram := "graph TD\n  A-->B"
-	if _, err := (Renderer{Pad: script}).NaarPNG(diagram); err != nil {
+	if _, err := (Renderer{Path: script}).ToPNG(diagram); err != nil {
 		t.Fatal(err)
 	}
-	inhoud, err := os.ReadFile(gegevens)
+	content, err := os.ReadFile(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tekst := string(inhoud)
+	text := string(content)
 	for _, argument := range []string{"-i\n", "-o\n", "-b\n", "white\n", "-q\n", "--inhoud--\n" + diagram} {
-		if !strings.Contains(tekst, argument) {
-			t.Errorf("%q ontbreekt in %q", argument, tekst)
+		if !strings.Contains(text, argument) {
+			t.Errorf("%q ontbreekt in %q", argument, text)
 		}
 	}
 }
 
-func TestNaarPNGExitcodeMelding(t *testing.T) {
-	script := schrijfScript(t, `echo eerste >&2
+func TestToPNGExitCodeMessage(t *testing.T) {
+	script := writeScript(t, `echo eerste >&2
 echo laatste fout >&2
 exit 7`)
-	_, err := (Renderer{Pad: script}).NaarPNG("")
+	_, err := (Renderer{Path: script}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "laatste fout") {
 		t.Fatalf("fout = %v", err)
 	}
 }
 
-func TestNaarPNGOntbrekendeUitvoer(t *testing.T) {
-	script := schrijfScript(t, "exit 0")
-	_, err := (Renderer{Pad: script}).NaarPNG("")
+func TestToPNGMissingOutput(t *testing.T) {
+	script := writeScript(t, "exit 0")
+	_, err := (Renderer{Path: script}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "ontbreekt") {
 		t.Fatalf("fout = %v", err)
 	}
 }
 
-func TestNaarPNGLegeUitvoer(t *testing.T) {
-	script := schrijfScript(t, paden()+`: > "$out"`)
-	_, err := (Renderer{Pad: script}).NaarPNG("")
+func TestToPNGEmptyOutput(t *testing.T) {
+	script := writeScript(t, paths()+`: > "$out"`)
+	_, err := (Renderer{Path: script}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "leeg") {
 		t.Fatalf("fout = %v", err)
 	}
 }
 
-func TestNaarPNGRendererBestaatNiet(t *testing.T) {
-	_, err := (Renderer{Pad: filepath.Join(t.TempDir(), "nergens")}).NaarPNG("")
+func TestToPNGRendererDoesNotExist(t *testing.T) {
+	_, err := (Renderer{Path: filepath.Join(t.TempDir(), "nergens")}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "bestaat niet") {
 		t.Fatalf("fout = %v", err)
 	}
 }
 
-func TestNaarPNGRendererNietUitvoerbaar(t *testing.T) {
-	pad := filepath.Join(t.TempDir(), "geen-uitvoer")
-	if err := os.WriteFile(pad, []byte("#!/bin/sh\n"), 0o600); err != nil {
+func TestToPNGRendererNotExecutable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "geen-uitvoer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := (Renderer{Pad: pad}).NaarPNG("")
+	_, err := (Renderer{Path: path}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "niet uitvoerbaar") {
 		t.Fatalf("fout = %v", err)
 	}
 }
 
-func TestNaarPNGTimeout(t *testing.T) {
-	script := schrijfScript(t, "exec sleep 5")
-	begin := time.Now()
-	_, err := (Renderer{Pad: script, Timeout: 100 * time.Millisecond}).NaarPNG("")
+func TestToPNGTimeout(t *testing.T) {
+	script := writeScript(t, "exec sleep 5")
+	start := time.Now()
+	_, err := (Renderer{Path: script, Timeout: 100 * time.Millisecond}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "timeout") || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("fout = %v", err)
 	}
-	if tijd := time.Since(begin); tijd >= time.Second {
-		t.Fatalf("timeout duurde %v", tijd)
+	if timeout := time.Since(start); timeout >= time.Second {
+		t.Fatalf("timeout duurde %v", timeout)
 	}
 }
 
-func TestNaarPNGRuimtOp(t *testing.T) {
-	for _, proef := range []struct {
-		naam string
+func TestToPNGRemovesFiles(t *testing.T) {
+	for _, caseTest := range []struct {
+		name string
 		body string
 	}{
 		{"geslaagd", `printf x > "$out"`},
 		{"mislukt", "echo stuk >&2\nexit 1"},
 	} {
-		t.Run(proef.naam, func(t *testing.T) {
-			registratie := filepath.Join(t.TempDir(), "map")
-			script := schrijfScript(t, paden()+`dirname "$out" > `+shellTekst(registratie)+"\n"+proef.body)
-			_, _ = (Renderer{Pad: script}).NaarPNG("")
-			mapje, err := os.ReadFile(registratie)
+		t.Run(caseTest.name, func(t *testing.T) {
+			record := filepath.Join(t.TempDir(), "map")
+			script := writeScript(t, paths()+`dirname "$out" > `+shellText(record)+"\n"+caseTest.body)
+			_, _ = (Renderer{Path: script}).ToPNG("")
+			tempDir, err := os.ReadFile(record)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Stat(strings.TrimSpace(string(mapje))); !os.IsNotExist(err) {
+			if _, err := os.Stat(strings.TrimSpace(string(tempDir))); !os.IsNotExist(err) {
 				t.Fatalf("tijdelijke map bestaat nog: %v", err)
 			}
 		})
 	}
 }
 
-func TestKies(t *testing.T) {
-	for _, proef := range []struct {
-		naam, vlag, omgeving, wil string
+func TestChoose(t *testing.T) {
+	for _, caseTest := range []struct {
+		name, flag, environment, want string
 	}{
 		{"vlag wint", "vlag", "omgeving", "vlag"},
 		{"omgeving wint", "", "omgeving", "omgeving"},
@@ -160,24 +160,24 @@ func TestKies(t *testing.T) {
 		{"uit", "uit", "omgeving", ""},
 		{"none", "none", "omgeving", ""},
 	} {
-		t.Run(proef.naam, func(t *testing.T) {
-			if kreeg := Kies(proef.vlag, proef.omgeving).Pad; kreeg != proef.wil {
-				t.Fatalf("Pad = %q, wil %q", kreeg, proef.wil)
+		t.Run(caseTest.name, func(t *testing.T) {
+			if got := Choose(caseTest.flag, caseTest.environment).Path; got != caseTest.want {
+				t.Fatalf("Pad = %q, wil %q", got, caseTest.want)
 			}
 		})
 	}
 }
 
-func TestUitgeschakeld(t *testing.T) {
-	if (Renderer{}).Beschikbaar() {
+func TestDisabled(t *testing.T) {
+	if (Renderer{}).Available() {
 		t.Fatal("lege renderer is beschikbaar")
 	}
-	_, err := (Renderer{}).NaarPNG("")
+	_, err := (Renderer{}).ToPNG("")
 	if err == nil || !strings.Contains(err.Error(), "uitgeschakeld") {
 		t.Fatalf("fout = %v", err)
 	}
 }
 
-func shellTekst(tekst string) string {
-	return "'" + strings.ReplaceAll(tekst, "'", "'\\\"'\\\"'") + "'"
+func shellText(text string) string {
+	return "'" + strings.ReplaceAll(text, "'", "'\\\"'\\\"'") + "'"
 }

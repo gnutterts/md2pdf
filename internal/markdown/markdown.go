@@ -1,4 +1,4 @@
-// Package markdown zet Markdown om in een klein, onafhankelijk documentmodel.
+// Package markdown converts Markdown to a small, independent document model.
 package markdown
 
 import (
@@ -11,182 +11,182 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// Soort is het soort blok in een document.
-type Soort int
+// Kind is the kind of block in a document.
+type Kind int
 
 const (
-	Kop Soort = iota
-	Alinea
-	Lijstitem
-	Codeblok
-	Citaat
-	Streep
-	Tabel
+	Heading Kind = iota
+	Paragraph
+	ListItem
+	CodeBlock
+	Quote
+	Rule
+	Table
 )
 
-// Stuk is een opgemaakt inline-fragment.
-type Stuk struct {
-	Tekst   string
-	Vet     bool
-	Cursief bool
-	Code    bool
-	URL     string
+// Span is a formatted inline fragment.
+type Span struct {
+	Text   string
+	Bold   bool
+	Italic bool
+	Code   bool
+	URL    string
 }
 
-// Uitlijning is de horizontale uitlijning van een tabelcel.
-type Uitlijning int
+// Alignment is the horizontal alignment of a table cell.
+type Alignment int
 
 const (
-	UitlijnLinks Uitlijning = iota
-	UitlijnMidden
-	UitlijnRechts
+	AlignLeft Alignment = iota
+	AlignCenter
+	AlignRight
 )
 
-// Cel is één cel van een tabel.
-type Cel struct {
-	Stukken    []Stuk
-	Uitlijning Uitlijning
+// Cell is one cell of a table.
+type Cell struct {
+	Spans     []Span
+	Alignment Alignment
 }
 
-// Rij is een rij cellen van een tabel.
-type Rij struct {
-	Cellen []Cel
-	Kop    bool
+// Row is a row of table cells.
+type Row struct {
+	Cells  []Cell
+	Header bool
 }
 
-// Blok is een onderdeel van een document.
-type Blok struct {
-	Soort     Soort
-	Niveau    int
-	Diepte    int
-	Genummerd bool
-	Nummer    int
-	Taal      string
-	Stukken   []Stuk
-	Regels    []string
-	Rijen     []Rij
+// Block is part of a document.
+type Block struct {
+	Kind     Kind
+	Level    int
+	Depth    int
+	Ordered  bool
+	Number   int
+	Language string
+	Spans    []Span
+	Lines    []string
+	Rows     []Row
 }
 
-// Ontleed leest Markdown naar een platte documentstructuur.
-func Ontleed(bron []byte) ([]Blok, error) {
+// Parse reads Markdown into a flat document structure.
+func Parse(source []byte) ([]Block, error) {
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
-	doc := md.Parser().Parse(text.NewReader(bron))
-	var blokken []Blok
-	verwerkKinderen(doc, bron, &blokken, 0, false, false, 0)
-	return blokken, nil
+	doc := md.Parser().Parse(text.NewReader(source))
+	var blocks []Block
+	walkChildren(doc, source, &blocks, 0, false, false, 0)
+	return blocks, nil
 }
 
-func verwerkKinderen(ouder ast.Node, bron []byte, uit *[]Blok, diepte int, inLijst, genummerd bool, nummer int) {
-	for kind := ouder.FirstChild(); kind != nil; kind = kind.NextSibling() {
+func walkChildren(parent ast.Node, source []byte, out *[]Block, depth int, inList, ordered bool, number int) {
+	for kind := parent.FirstChild(); kind != nil; kind = kind.NextSibling() {
 		switch n := kind.(type) {
 		case *ast.Heading:
-			*uit = append(*uit, Blok{Soort: Kop, Niveau: n.Level, Stukken: stukken(n, bron, false, false, false, "")})
+			*out = append(*out, Block{Kind: Heading, Level: n.Level, Spans: spans(n, source, false, false, false, "")})
 		case *ast.Paragraph, *ast.TextBlock:
-			soort := Alinea
-			if inLijst {
-				soort = Lijstitem
+			kind := Paragraph
+			if inList {
+				kind = ListItem
 			}
-			*uit = append(*uit, Blok{Soort: soort, Diepte: diepte, Genummerd: genummerd, Nummer: nummer, Stukken: stukken(n, bron, false, false, false, "")})
+			*out = append(*out, Block{Kind: kind, Depth: depth, Ordered: ordered, Number: number, Spans: spans(n, source, false, false, false, "")})
 		case *ast.List:
-			lijstDiepte := diepte
-			if inLijst {
-				lijstDiepte++
+			listDepth := depth
+			if inList {
+				listDepth++
 			}
-			volg := n.Start
+			next := n.Start
 			for item := n.FirstChild(); item != nil; item = item.NextSibling() {
 				if li, ok := item.(*ast.ListItem); ok {
-					nr := 0
+					number := 0
 					if n.IsOrdered() {
-						nr = volg
-						volg++
+						number = next
+						next++
 					}
-					verwerkKinderen(li, bron, uit, lijstDiepte, true, n.IsOrdered(), nr)
+					walkChildren(li, source, out, listDepth, true, n.IsOrdered(), number)
 				}
 			}
 		case *ast.FencedCodeBlock:
-			*uit = append(*uit, codeblok(n, bron, string(n.Language(bron))))
+			*out = append(*out, codeBlock(n, source, string(n.Language(source))))
 		case *ast.CodeBlock:
-			*uit = append(*uit, codeblok(n, bron, ""))
+			*out = append(*out, codeBlock(n, source, ""))
 		case *ast.Blockquote:
-			for regel := n.FirstChild(); regel != nil; regel = regel.NextSibling() {
-				*uit = append(*uit, Blok{Soort: Citaat, Stukken: stukken(regel, bron, false, true, false, "")})
+			for line := n.FirstChild(); line != nil; line = line.NextSibling() {
+				*out = append(*out, Block{Kind: Quote, Spans: spans(line, source, false, true, false, "")})
 			}
 		case *ast.ThematicBreak:
-			*uit = append(*uit, Blok{Soort: Streep})
+			*out = append(*out, Block{Kind: Rule})
 		case *extast.Table:
-			*uit = append(*uit, tabel(n, bron))
+			*out = append(*out, table(n, source))
 		}
 	}
 }
 
-func codeblok(n ast.Node, bron []byte, taal string) Blok {
-	regels := make([]string, 0)
+func codeBlock(n ast.Node, source []byte, language string) Block {
+	lines := make([]string, 0)
 	for i := 0; i < n.Lines().Len(); i++ {
-		stuk := n.Lines().At(i)
-		regels = append(regels, strings.TrimSuffix(string(stuk.Value(bron)), "\n"))
+		span := n.Lines().At(i)
+		lines = append(lines, strings.TrimSuffix(string(span.Value(source)), "\n"))
 	}
-	return Blok{Soort: Codeblok, Taal: taal, Regels: regels}
+	return Block{Kind: CodeBlock, Language: language, Lines: lines}
 }
 
-func tabel(n *extast.Table, bron []byte) Blok {
-	var rijen []Rij
-	for rij := n.FirstChild(); rij != nil; rij = rij.NextSibling() {
-		var cellen []Cel
-		for cel := rij.FirstChild(); cel != nil; cel = cel.NextSibling() {
-			cellen = append(cellen, Cel{
-				Stukken:    stukken(cel, bron, false, false, false, ""),
-				Uitlijning: uitlijning(cel),
+func table(n *extast.Table, source []byte) Block {
+	var rows []Row
+	for row := n.FirstChild(); row != nil; row = row.NextSibling() {
+		var cells []Cell
+		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+			cells = append(cells, Cell{
+				Spans:     spans(cell, source, false, false, false, ""),
+				Alignment: alignment(cell),
 			})
 		}
-		_, kop := rij.(*extast.TableHeader)
-		rijen = append(rijen, Rij{Cellen: cellen, Kop: kop})
+		_, header := row.(*extast.TableHeader)
+		rows = append(rows, Row{Cells: cells, Header: header})
 	}
-	return Blok{Soort: Tabel, Rijen: rijen}
+	return Block{Kind: Table, Rows: rows}
 }
 
-func uitlijning(cel ast.Node) Uitlijning {
-	tabelcel, ok := cel.(*extast.TableCell)
+func alignment(cell ast.Node) Alignment {
+	tableCell, ok := cell.(*extast.TableCell)
 	if !ok {
-		return UitlijnLinks
+		return AlignLeft
 	}
-	switch tabelcel.Alignment {
+	switch tableCell.Alignment {
 	case extast.AlignRight:
-		return UitlijnRechts
+		return AlignRight
 	case extast.AlignCenter:
-		return UitlijnMidden
+		return AlignCenter
 	default:
-		return UitlijnLinks
+		return AlignLeft
 	}
 }
 
-func stukken(n ast.Node, bron []byte, vet, cursief, code bool, url string) []Stuk {
-	var uit []Stuk
+func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Span {
+	var out []Span
 	var loop func(ast.Node, bool, bool, bool, string)
-	toevoegen := func(tekst string, v, c, co bool, u string) {
-		if tekst == "" {
+	appendSpan := func(text string, v, c, co bool, u string) {
+		if text == "" {
 			return
 		}
-		if len(uit) > 0 && uit[len(uit)-1].Vet == v && uit[len(uit)-1].Cursief == c && uit[len(uit)-1].Code == co && uit[len(uit)-1].URL == u {
-			uit[len(uit)-1].Tekst += tekst
+		if len(out) > 0 && out[len(out)-1].Bold == v && out[len(out)-1].Italic == c && out[len(out)-1].Code == co && out[len(out)-1].URL == u {
+			out[len(out)-1].Text += text
 			return
 		}
-		uit = append(uit, Stuk{Tekst: tekst, Vet: v, Cursief: c, Code: co, URL: u})
+		out = append(out, Span{Text: text, Bold: v, Italic: c, Code: co, URL: u})
 	}
 	loop = func(k ast.Node, v, c, co bool, u string) {
 		switch x := k.(type) {
 		case *ast.Text:
-			tekst := string(x.Segment.Value(bron))
+			text := string(x.Segment.Value(source))
 			if x.SoftLineBreak() {
-				tekst += " "
+				text += " "
 			}
 			if x.HardLineBreak() {
-				tekst += "\n"
+				text += "\n"
 			}
-			toevoegen(tekst, v, c, co, u)
+			appendSpan(text, v, c, co, u)
 		case *ast.String:
-			toevoegen(string(x.Value), v, c, co, u)
+			appendSpan(string(x.Value), v, c, co, u)
 		case *ast.CodeSpan:
-			toevoegen(string(x.Text(bron)), v, c, true, u)
+			appendSpan(string(x.Text(source)), v, c, true, u)
 		case *ast.Emphasis:
 			for q := x.FirstChild(); q != nil; q = q.NextSibling() {
 				loop(q, v || x.Level >= 2, c || x.Level == 1 || x.Level == 3, co, u)
@@ -202,7 +202,7 @@ func stukken(n ast.Node, bron []byte, vet, cursief, code bool, url string) []Stu
 		}
 	}
 	for kind := n.FirstChild(); kind != nil; kind = kind.NextSibling() {
-		loop(kind, vet, cursief, code, url)
+		loop(kind, bold, italic, code, url)
 	}
-	return uit
+	return out
 }

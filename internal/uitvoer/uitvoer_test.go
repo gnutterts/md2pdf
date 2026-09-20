@@ -24,7 +24,7 @@ func TestVoerMermaidFoutWaarschuwtEnGaatDoor(t *testing.T) {
 	}
 	doel := filepath.Join(mapnaam, "diagram.pdf")
 	waarschuwingen := 0
-	opties := render.Opties{Mermaid: mermaid.Renderer{Pad: script}, Waarschuw: func(string) { waarschuwingen++ }}
+	opties := render.Opties{Mermaid: mermaid.Renderer{Path: script}, Waarschuw: func(string) { waarschuwingen++ }}
 	if err := Voer(cli.Plan{Modus: cli.ModusEnkel, Taken: []cli.Taak{{Bronnen: []string{bron}, Doel: doel}}}, opties); err != nil {
 		t.Fatal(err)
 	}

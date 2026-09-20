@@ -34,7 +34,7 @@ func uitvoeren(args []string) error {
 		return err
 	}
 	opties := render.Opties{
-		Mermaid: mermaid.Kies(plan.Mermaid, os.Getenv("MD2PDF_MERMAID")),
+		Mermaid: mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID")),
 		Waarschuw: func(melding string) {
 			fmt.Fprintln(os.Stderr, "waarschuwing:", melding)
 		},
