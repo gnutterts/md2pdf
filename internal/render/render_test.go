@@ -17,6 +17,7 @@ type actieveStijl struct {
 type nepVel struct {
 	aanroepen []string
 	stijl     actieveStijl
+	tabellen  [][]markdown.Rij
 }
 
 func (n *nepVel) NieuwePagina() { n.aanroepen = append(n.aanroepen, "pagina") }
@@ -38,7 +39,11 @@ func (n *nepVel) HangendInspringen()   { n.aanroepen = append(n.aanroepen, "hang
 func (n *nepVel) Codeblok(r []string) {
 	n.aanroepen = append(n.aanroepen, "code:"+strings.Join(r, ","))
 }
-func (n *nepVel) Streep()     { n.aanroepen = append(n.aanroepen, "streep") }
+func (n *nepVel) Streep() { n.aanroepen = append(n.aanroepen, "streep") }
+func (n *nepVel) Tabel(rijen []markdown.Rij) {
+	n.tabellen = append(n.tabellen, rijen)
+	n.aanroepen = append(n.aanroepen, fmt.Sprintf("tabel:%d", len(rijen)))
+}
 func (n *nepVel) Fout() error { return nil }
 func (s actieveStijl) string() string {
 	return fmt.Sprintf("%s:%s:%g", s.familie, stijl(s.vet, s.cursief), s.grootte)
@@ -76,6 +81,32 @@ func TestTekenVolgordeEnStijlen(t *testing.T) {
 			}
 			controleerVolgorde(t, vel.aanroepen, test.wil)
 		})
+	}
+}
+
+func TestTekenTabel(t *testing.T) {
+	blokken := []markdown.Blok{{Soort: markdown.Tabel, Rijen: []markdown.Rij{
+		{Kop: true, Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: "A"}}}, {Stukken: []markdown.Stuk{{Tekst: "B"}}}}},
+		{Cellen: []markdown.Cel{{Stukken: []markdown.Stuk{{Tekst: "1"}}}, {Stukken: []markdown.Stuk{{Tekst: "2"}}}}},
+	}}}
+	vel := &nepVel{}
+	if err := Teken(blokken, vel); err != nil {
+		t.Fatal(err)
+	}
+	tabelAanroepen := 0
+	for _, aanroep := range vel.aanroepen {
+		if strings.HasPrefix(aanroep, "tabel:") {
+			tabelAanroepen++
+		}
+	}
+	if tabelAanroepen != 1 {
+		t.Fatalf("Tabel is %d keer aangeroepen: %q", tabelAanroepen, vel.aanroepen)
+	}
+	if len(vel.tabellen) != 1 || len(vel.tabellen[0]) != 2 {
+		t.Fatalf("Tabel kreeg %d rijen, wil 2: %v", len(vel.tabellen), vel.tabellen)
+	}
+	if !vel.tabellen[0][0].Kop || vel.tabellen[0][1].Kop {
+		t.Fatalf("kopregel niet als eerste rij: %v", vel.tabellen[0])
 	}
 }
 

@@ -33,6 +33,27 @@ type Stuk struct {
 	URL     string
 }
 
+// Uitlijning is de horizontale uitlijning van een tabelcel.
+type Uitlijning int
+
+const (
+	UitlijnLinks Uitlijning = iota
+	UitlijnMidden
+	UitlijnRechts
+)
+
+// Cel is één cel van een tabel.
+type Cel struct {
+	Stukken    []Stuk
+	Uitlijning Uitlijning
+}
+
+// Rij is een rij cellen van een tabel.
+type Rij struct {
+	Cellen []Cel
+	Kop    bool
+}
+
 // Blok is een onderdeel van een document.
 type Blok struct {
 	Soort     Soort
@@ -43,7 +64,7 @@ type Blok struct {
 	Taal      string
 	Stukken   []Stuk
 	Regels    []string
-	Rijen     [][]Stuk
+	Rijen     []Rij
 }
 
 // Ontleed leest Markdown naar een platte documentstructuur.
@@ -108,15 +129,34 @@ func codeblok(n ast.Node, bron []byte, taal string) Blok {
 }
 
 func tabel(n *extast.Table, bron []byte) Blok {
-	var rijen [][]Stuk
+	var rijen []Rij
 	for rij := n.FirstChild(); rij != nil; rij = rij.NextSibling() {
-		var cellen []Stuk
+		var cellen []Cel
 		for cel := rij.FirstChild(); cel != nil; cel = cel.NextSibling() {
-			cellen = append(cellen, stukken(cel, bron, false, false, false, "")...)
+			cellen = append(cellen, Cel{
+				Stukken:    stukken(cel, bron, false, false, false, ""),
+				Uitlijning: uitlijning(cel),
+			})
 		}
-		rijen = append(rijen, cellen)
+		_, kop := rij.(*extast.TableHeader)
+		rijen = append(rijen, Rij{Cellen: cellen, Kop: kop})
 	}
 	return Blok{Soort: Tabel, Rijen: rijen}
+}
+
+func uitlijning(cel ast.Node) Uitlijning {
+	tabelcel, ok := cel.(*extast.TableCell)
+	if !ok {
+		return UitlijnLinks
+	}
+	switch tabelcel.Alignment {
+	case extast.AlignRight:
+		return UitlijnRechts
+	case extast.AlignCenter:
+		return UitlijnMidden
+	default:
+		return UitlijnLinks
+	}
 }
 
 func stukken(n ast.Node, bron []byte, vet, cursief, code bool, url string) []Stuk {

@@ -22,6 +22,9 @@ type Vel interface {
 	HangendInspringen()
 	Codeblok(regels []string)
 	Streep()
+	// Tabel tekent een volledige tabel: het vel bepaalt kolombreedtes en
+	// paginabreuken, omdat alleen daar de fontmetrieken bekend zijn.
+	Tabel(rijen []markdown.Rij)
 	Fout() error
 }
 
@@ -96,6 +99,9 @@ func Teken(blokken []markdown.Blok, vel Vel) error {
 			vel.Regeleinde(6)
 		case markdown.Streep:
 			vel.Streep()
+			vel.Regeleinde(6)
+		case markdown.Tabel:
+			vel.Tabel(blok.Rijen)
 			vel.Regeleinde(6)
 		}
 		eerste = false

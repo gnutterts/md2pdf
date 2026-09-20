@@ -129,3 +129,50 @@ func TestOntleedREADME(t *testing.T) {
 		t.Fatalf("Ontleed = %d blokken, %v", len(blokken), err)
 	}
 }
+
+func TestOntleedTabel(t *testing.T) {
+	bron := []byte("| Naam | Waarde |\n|------|--------|\n| een  | 1      |\n| twee | 2      |\n")
+	blokken, err := Ontleed(bron)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blokken) != 1 || blokken[0].Soort != Tabel {
+		t.Fatalf("Ontleed leverde geen tabelblok: %v", blokken)
+	}
+	rijen := blokken[0].Rijen
+	if len(rijen) != 3 {
+		t.Fatalf("tabel heeft %d rijen, wil 3: %v", len(rijen), rijen)
+	}
+	if !rijen[0].Kop || rijen[1].Kop || rijen[2].Kop {
+		t.Fatalf("alleen de eerste rij hoort Kop te zijn: %v", rijen)
+	}
+	wil := [][]string{{"Naam", "Waarde"}, {"een", "1"}, {"twee", "2"}}
+	for i, rij := range rijen {
+		if len(rij.Cellen) != 2 {
+			t.Fatalf("rij %d heeft %d cellen, wil 2: %v", i, len(rij.Cellen), rij)
+		}
+		for kolom, cel := range rij.Cellen {
+			if len(cel.Stukken) != 1 || cel.Stukken[0].Tekst != wil[i][kolom] {
+				t.Fatalf("cel %d,%d is %v, wil %q", i, kolom, cel.Stukken, wil[i][kolom])
+			}
+		}
+	}
+}
+
+func TestOntleedTabelUitlijning(t *testing.T) {
+	bron := []byte("| L | C | R |\n|---|:--:|---:|\n| a | b | c |\n")
+	blokken, err := Ontleed(bron)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rijen := blokken[0].Rijen
+	if len(rijen) == 0 || len(rijen[0].Cellen) != 3 {
+		t.Fatalf("verwachte drie uitgelijnde cellen: %v", rijen)
+	}
+	wil := []Uitlijning{UitlijnLinks, UitlijnMidden, UitlijnRechts}
+	for kolom, uitlijning := range wil {
+		if rijen[0].Cellen[kolom].Uitlijning != uitlijning {
+			t.Fatalf("kolom %d heeft uitlijning %v, wil %v", kolom, rijen[0].Cellen[kolom].Uitlijning, uitlijning)
+		}
+	}
+}

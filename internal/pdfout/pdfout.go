@@ -4,7 +4,9 @@ package pdfout
 import (
 	"errors"
 	"os"
+	"strings"
 
+	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
 	"github.com/gnutterts/md2pdf/internal/tekst"
 	"github.com/go-pdf/fpdf"
@@ -78,6 +80,210 @@ func (v documentVel) Codeblok(regels []string) {
 		}
 		v.d.pdf.CellFormat(v.tekstbreedte(), 12, regel, "", 0, "", false, 0, "")
 		v.Regeleinde(12)
+	}
+}
+
+const (
+	tabelFontGrootte = 10.0
+	tabelRegelhoogte = 14.0
+	tabelMinHoogte   = 16.0
+	tabelMinBreedte  = 40.0
+	tabelCelvulling  = 8.0
+	tabelRand        = 0.4
+	tabelGrijs       = 230
+)
+
+// Tabel tekent een volledige tabel met kopregel, kolombreedtes en paginabreuken.
+func (v documentVel) Tabel(rijen []markdown.Rij) {
+	kolommen := aantalKolommen(rijen)
+	if kolommen == 0 {
+		return
+	}
+	pdf := v.d.pdf
+
+	autoBreek, breekMarge := pdf.GetAutoPageBreak()
+	celmarge := pdf.GetCellMargin()
+	lijnbreedte := pdf.GetLineWidth()
+	tr, tg, tb := pdf.GetDrawColor()
+	fr, fg, fb := pdf.GetFillColor()
+	txr, txg, txb := pdf.GetTextColor()
+
+	pdf.SetAutoPageBreak(false, breekMarge)
+	pdf.SetCellMargin(tabelCelvulling / 2)
+	pdf.SetLineWidth(tabelRand)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetTextColor(0, 0, 0)
+
+	defer func() {
+		pdf.SetAutoPageBreak(autoBreek, breekMarge)
+		pdf.SetCellMargin(celmarge)
+		pdf.SetLineWidth(lijnbreedte)
+		pdf.SetDrawColor(tr, tg, tb)
+		pdf.SetFillColor(fr, fg, fb)
+		pdf.SetTextColor(txr, txg, txb)
+		v.zetX()
+	}()
+
+	breedtes := v.kolombreedtes(rijen, kolommen)
+	kopIndex := -1
+	if len(rijen) > 0 && rijen[0].Kop {
+		kopIndex = 0
+	}
+
+	for i := range rijen {
+		hoogte := v.rijhoogte(rijen[i], breedtes)
+		if !v.pastRij(hoogte) {
+			pdf.AddPage()
+			v.zetX()
+			if i != kopIndex && kopIndex >= 0 {
+				v.tekenRij(rijen[kopIndex], breedtes)
+			}
+		}
+		v.tekenRij(rijen[i], breedtes)
+	}
+}
+
+// aantalKolommen telt de kolommen van de breedste rij.
+func aantalKolommen(rijen []markdown.Rij) int {
+	kolommen := 0
+	for _, rij := range rijen {
+		if len(rij.Cellen) > kolommen {
+			kolommen = len(rij.Cellen)
+		}
+	}
+	return kolommen
+}
+
+// celtekst voegt de stukken van een cel samen zodat er niets verloren gaat.
+func celtekst(cel markdown.Cel) string {
+	var b strings.Builder
+	for _, stuk := range cel.Stukken {
+		b.WriteString(stuk.Tekst)
+	}
+	return b.String()
+}
+
+// stelCelfontIn kiest het font voor een cel: vet voor de kopregel, normaal voor data.
+func (v documentVel) stelCelfontIn(kop bool) {
+	stijl := ""
+	if kop {
+		stijl = "B"
+	}
+	v.d.pdf.SetFont("Helvetica", stijl, tabelFontGrootte)
+}
+
+// kolombreedtes meet de breedste cel per kolom en schaalt zo nodig terug.
+func (v documentVel) kolombreedtes(rijen []markdown.Rij, kolommen int) []float64 {
+	breedtes := make([]float64, kolommen)
+	for kolom := 0; kolom < kolommen; kolom++ {
+		breedte := tabelMinBreedte
+		for _, rij := range rijen {
+			if kolom >= len(rij.Cellen) {
+				continue
+			}
+			v.stelCelfontIn(rij.Kop)
+			celbreedte := v.d.pdf.GetStringWidth(tekst.NaarCP1252(celtekst(rij.Cellen[kolom]))) + tabelCelvulling
+			if celbreedte > breedte {
+				breedte = celbreedte
+			}
+		}
+		breedtes[kolom] = breedte
+	}
+
+	som := 0.0
+	for _, breedte := range breedtes {
+		som += breedte
+	}
+	if som > v.tekstbreedte() {
+		factor := v.tekstbreedte() / som
+		for i := range breedtes {
+			breedtes[i] *= factor
+		}
+	}
+	return breedtes
+}
+
+// regelsVoor breekt celinhoud op woordgrens om binnen de kolombreedte.
+// De volle kolombreedte gaat erin: fpdf.SplitLines trekt zelf al tweemaal de
+// celmarge af (wmax = w - 2*cMargin), dus hier nog eens aftrekken breekt te vroeg af.
+func (v documentVel) regelsVoor(cel markdown.Cel, breedte float64) []string {
+	tekst := tekst.NaarCP1252(celtekst(cel))
+	if tekst == "" {
+		return nil
+	}
+	regels := v.d.pdf.SplitLines([]byte(tekst), breedte)
+	uit := make([]string, len(regels))
+	for i, regel := range regels {
+		uit[i] = string(regel)
+	}
+	return uit
+}
+
+// rijhoogte is de hoogte van de hoogste cel, met een minimum van 16 punt.
+func (v documentVel) rijhoogte(rij markdown.Rij, breedtes []float64) float64 {
+	hoogte := tabelMinHoogte
+	for kolom, cel := range rij.Cellen {
+		if kolom >= len(breedtes) {
+			break
+		}
+		v.stelCelfontIn(rij.Kop)
+		regels := v.regelsVoor(cel, breedtes[kolom])
+		celhoogte := float64(len(regels)) * tabelRegelhoogte
+		if celhoogte > hoogte {
+			hoogte = celhoogte
+		}
+	}
+	return hoogte
+}
+
+// pastRij geeft aan of een rij nog op de huidige pagina past.
+func (v documentVel) pastRij(hoogte float64) bool {
+	_, paginaHoogte := v.d.pdf.GetPageSize()
+	_, _, _, bodem := v.d.pdf.GetMargins()
+	return v.d.pdf.GetY()+hoogte <= paginaHoogte-bodem
+}
+
+// tekenRij tekent één rij op de huidige positie.
+func (v documentVel) tekenRij(rij markdown.Rij, breedtes []float64) {
+	hoogte := v.rijhoogte(rij, breedtes)
+	x := marge + v.d.inspringing
+	y := v.d.pdf.GetY()
+	for kolom, cel := range rij.Cellen {
+		if kolom >= len(breedtes) {
+			break
+		}
+		v.tekenCel(cel, rij.Kop, x, y, breedtes[kolom], hoogte)
+		x += breedtes[kolom]
+	}
+	v.d.pdf.SetXY(marge+v.d.inspringing, y+hoogte)
+}
+
+// tekenCel tekent de achtergrond, rand en tekst van één cel.
+func (v documentVel) tekenCel(cel markdown.Cel, kop bool, x, y, breedte, hoogte float64) {
+	pdf := v.d.pdf
+	v.stelCelfontIn(kop)
+	if kop {
+		pdf.SetFillColor(tabelGrijs, tabelGrijs, tabelGrijs)
+		pdf.Rect(x, y, breedte, hoogte, "FD")
+	} else {
+		pdf.Rect(x, y, breedte, hoogte, "D")
+	}
+	regels := v.regelsVoor(cel, breedte)
+	for i, regel := range regels {
+		pdf.SetXY(x, y+float64(i)*tabelRegelhoogte)
+		pdf.CellFormat(breedte, tabelRegelhoogte, regel, "", 0, uitlijning(cel.Uitlijning), false, 0, "")
+	}
+}
+
+// uitlijning vertaalt de markdown-uitlijning naar de fpdf-lettercodes.
+func uitlijning(u markdown.Uitlijning) string {
+	switch u {
+	case markdown.UitlijnMidden:
+		return "C"
+	case markdown.UitlijnRechts:
+		return "R"
+	default:
+		return "L"
 	}
 }
 func (v documentVel) Streep() {
