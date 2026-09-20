@@ -39,11 +39,12 @@ func (n nepBestandssysteem) LeesMap(pad string) ([]string, error) {
 
 func nieuwNepFS() nepBestandssysteem {
 	return nepBestandssysteem{
-		paden: map[string]bool{"boek.md": false, "notitie.txt": false, "wiki": true, "wiki/": true, "leeg": true, "doelmap": true, "doel.pdf": false},
+		paden: map[string]bool{"boek.md": false, "notitie.txt": false, "_Footer.md": false, "wiki": true, "wiki/": true, "leeg": true, "navigatie": true, "doelmap": true, "doel.pdf": false},
 		mappen: map[string][]string{
-			"wiki":  {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
-			"wiki/": {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
-			"leeg":  {"tekst.txt"},
+			"wiki":      {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
+			"wiki/":     {"z.md", "_Sidebar.md", "B.md", "a.MD", "_Footer.md", "10.md", "2.md", "A.md", "b.md", "index.md", "eind.md", "hoofdstuk.md", "laatste.md", "lezen.txt", "x.markdown"},
+			"leeg":      {"tekst.txt"},
+			"navigatie": {"_Footer.md", "_Sidebar.MD"},
 		},
 		fouten: map[string]error{},
 	}
@@ -105,6 +106,44 @@ func TestPlannenFouten(t *testing.T) {
 	}
 }
 
+func TestPlannenOnderstreepteNamen(t *testing.T) {
+	fs := nieuwNepFS()
+	tests := []struct {
+		naam  string
+		args  []string
+		plan  Plan
+		tekst string
+	}{
+		{"samengevoegd slaat navigatie over", []string{"wiki"}, Plan{Modus: ModusSamengevoegd, Taken: []Taak{{Bronnen: wikiBronnen("wiki"), Doel: "wiki.pdf"}}}, ""},
+		{"los slaat navigatie over", []string{"--los", "wiki"}, Plan{Modus: ModusLos, Taken: losseTaken("wiki", "")}, ""},
+		{"alleen navigatie geeft fout", []string{"navigatie"}, Plan{}, "map \"navigatie\" bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)"},
+		{"expliciet navigatiebestand", []string{"_Footer.md"}, Plan{Modus: ModusEnkel, Taken: []Taak{{Bronnen: []string{"_Footer.md"}, Doel: "_Footer.pdf"}}}, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.naam, func(t *testing.T) {
+			plan, err := Plannen(test.args, fs)
+			if test.tekst != "" {
+				if err == nil || err.Error() != test.tekst {
+					t.Fatalf("fout = %v, wil %q", err, test.tekst)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(plan, test.plan) {
+				t.Errorf("plan = %#v, wil %#v", plan, test.plan)
+			}
+			if test.plan.Modus == ModusSamengevoegd && len(plan.Taken[0].Bronnen) != 11 {
+				t.Errorf("aantal bronnen = %d, wil 11", len(plan.Taken[0].Bronnen))
+			}
+			if test.plan.Modus == ModusLos && len(plan.Taken) != 11 {
+				t.Errorf("aantal taken = %d, wil 11", len(plan.Taken))
+			}
+		})
+	}
+}
+
 func TestPlannenHulpEnVersie(t *testing.T) {
 	fs := nieuwNepFS()
 	for _, test := range []struct {
@@ -144,7 +183,7 @@ func TestOSBestandssysteem(t *testing.T) {
 
 func wikiBronnen(mapnaam string) []string {
 	return []string{
-		filepath.Join(mapnaam, "10.md"), filepath.Join(mapnaam, "2.md"), filepath.Join(mapnaam, "A.md"), filepath.Join(mapnaam, "B.md"), filepath.Join(mapnaam, "_Footer.md"), filepath.Join(mapnaam, "_Sidebar.md"), filepath.Join(mapnaam, "a.MD"), filepath.Join(mapnaam, "b.md"), filepath.Join(mapnaam, "eind.md"), filepath.Join(mapnaam, "hoofdstuk.md"), filepath.Join(mapnaam, "index.md"), filepath.Join(mapnaam, "laatste.md"), filepath.Join(mapnaam, "z.md"),
+		filepath.Join(mapnaam, "10.md"), filepath.Join(mapnaam, "2.md"), filepath.Join(mapnaam, "A.md"), filepath.Join(mapnaam, "B.md"), filepath.Join(mapnaam, "a.MD"), filepath.Join(mapnaam, "b.md"), filepath.Join(mapnaam, "eind.md"), filepath.Join(mapnaam, "hoofdstuk.md"), filepath.Join(mapnaam, "index.md"), filepath.Join(mapnaam, "laatste.md"), filepath.Join(mapnaam, "z.md"),
 	}
 }
 

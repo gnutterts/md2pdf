@@ -28,7 +28,7 @@ daarmee in tegenspraak is — een bestaande map waar een bestandsnaam hoort, of 
 waar een map hoort — geeft een foutmelding en exitcode 1.
 
 Bij een map worden alle `.md`-bestanden in die map zelf meegenomen, niet die in submappen, in
-alfabetische volgorde op bestandsnaam. Dat geldt ook voor wiki-navigatiebestanden als `_Footer.md`
-en `_Sidebar.md`: ze worden niet apart behandeld.
+alfabetische volgorde op bestandsnaam. Namen die met `_` beginnen worden overgeslagen; wie zo'n
+bestand rechtstreeks als argument geeft, krijgt het wél verwerkt.
 
 Het renderen volgt in een volgende mijlpaal.

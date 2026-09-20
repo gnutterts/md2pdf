@@ -180,13 +180,20 @@ func markdownBestanden(mapnaam string, fs Bestandssysteem) ([]string, error) {
 		return nil, fmt.Errorf("kan map %q niet lezen: %w", mapnaam, err)
 	}
 	var markdown []string
+	var heeftMarkdown bool
 	for _, naam := range namen {
 		if strings.HasSuffix(strings.ToLower(naam), ".md") {
-			markdown = append(markdown, naam)
+			heeftMarkdown = true
+			if !strings.HasPrefix(naam, "_") {
+				markdown = append(markdown, naam)
+			}
 		}
 	}
 	sort.Strings(markdown)
 	if len(markdown) == 0 {
+		if heeftMarkdown {
+			return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden (namen die met _ beginnen worden overgeslagen)", mapnaam)
+		}
 		return nil, fmt.Errorf("map %q bevat geen Markdown-bestanden", mapnaam)
 	}
 	bronnen := make([]string, len(markdown))
