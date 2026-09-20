@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  controle:
-    name: Bouwen, controleren en testen
+  check:
+    name: Build, vet and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,28 +20,28 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Opmaak
+      - name: Formatting
         run: |
-          ongeformatteerd="$(gofmt -l $(git ls-files '*.go'))"
-          if [ -n "$ongeformatteerd" ]; then
-            echo "Niet met gofmt geformatteerd:"
-            echo "$ongeformatteerd"
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "Not formatted with gofmt:"
+            echo "$unformatted"
             exit 1
           fi
 
-      - name: Bouwen
+      - name: Build
         run: go build ./...
 
-      - name: Statische controle
+      - name: Vet
         run: go vet ./...
 
-      - name: Testen
+      - name: Test
         run: go test ./...
 
-      - name: Geen mermaid-cli op deze machine
+      - name: No Mermaid CLI on this machine
         run: |
           if command -v mmdc >/dev/null 2>&1; then
-            echo "mmdc staat onverwacht op het PATH; de suite hoort zonder te draaien" >&2
+            echo "mmdc is unexpectedly on PATH; the suite is meant to run without it" >&2
             exit 1
           fi
           go test -count=1 ./internal/mermaid/

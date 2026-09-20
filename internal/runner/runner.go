@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package runner turns output plans into PDF files.
 package runner
 

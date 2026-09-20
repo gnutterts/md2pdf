@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package render draws the document model on a Canvas.
 package render
 

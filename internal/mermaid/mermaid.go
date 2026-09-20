@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package mermaid renders Mermaid diagrams with an external program.
 package mermaid
 
@@ -9,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -41,6 +44,17 @@ func Choose(flag, environment string) Renderer {
 	return Renderer{Path: path}
 }
 
+// notExecutable reports whether a file lacks the executable permission bit.
+// Windows has no such bit: there, a regular file would always look
+// non-executable, so exec.LookPath is the only meaningful check and it has
+// already consulted PATHEXT by the time this is called.
+func notExecutable(info os.FileInfo) bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	return info.Mode()&0o111 == 0
+}
+
 // ToPNG renders the diagram text and returns the PNG bytes.
 func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	if !r.Available() {
@@ -49,7 +63,7 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 
 	path, err := exec.LookPath(r.Path)
 	if err != nil {
-		if info, statErr := os.Stat(r.Path); statErr == nil && (info.IsDir() || info.Mode()&0o111 == 0) {
+		if info, statErr := os.Stat(r.Path); statErr == nil && notExecutable(info) {
 			return nil, errors.New("mermaid renderer is not executable")
 		}
 		return nil, fmt.Errorf("mermaid renderer does not exist: %w", err)
@@ -58,7 +72,7 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot check mermaid renderer: %w", err)
 	}
-	if info.IsDir() || info.Mode()&0o111 == 0 {
+	if info.IsDir() || notExecutable(info) {
 		return nil, errors.New("mermaid renderer is not executable")
 	}
 

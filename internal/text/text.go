@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package text contains conversions for the limited character set of PDF core fonts.
 package text
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package markdown converts Markdown to a small, independent document model.
 package markdown
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package pdfout provides an fpdf implementation of render.Canvas.
 package pdfout
 

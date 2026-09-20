@@ -9,7 +9,15 @@
 ## Requirements
 
 - Go 1.27 or later.
-- Mermaid CLI (`mmdc`) is optional. Without this renderer, Mermaid blocks appear as code blocks and nothing else unusual happens.
+- [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) is optional and only needed to
+  render Mermaid diagrams. Install it with npm:
+
+  ```sh
+  npm install -g @mermaid-js/mermaid-cli
+  ```
+
+  Without this renderer, Mermaid blocks appear as code blocks and nothing else unusual happens, so
+  the tool stays usable without it.
 
 ## Building and installing
 
@@ -81,3 +89,17 @@ written to stderr and the diagram remains visible as a code block.
 - Inline formatting inside a table cell is flattened to plain text.
 - Links are clickable but are not visibly distinguished from ordinary text.
 - Code lines wider than the text column are truncated rather than wrapped.
+
+## Dependency updates
+
+[Renovate](https://docs.renovatebot.com) watches the Go modules and the GitHub Actions used here; its
+configuration lives in [renovate.json](renovate.json). Updates wait seven days after release before a
+pull request is opened, and Go modules are pinned to an exact version rather than a range.
+
+## Licence
+
+MIT; see [LICENSE](LICENSE).
+
+`md2pdf` links against [goldmark](https://github.com/yuin/goldmark) and
+[fpdf](https://github.com/go-pdf/fpdf), both under the MIT licence. Their notices are reproduced in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and ship alongside the released binaries.

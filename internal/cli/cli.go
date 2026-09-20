@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package cli creates an output plan for md2pdf.
 package cli
 
