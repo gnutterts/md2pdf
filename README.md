@@ -1,6 +1,6 @@
 # md2pdf
 
-`md2pdf` zet Markdown in een volgende mijlpaal om naar PDF. De opdracht ondersteunt drie invoermodi:
+`md2pdf` zet Markdown om naar PDF. De opdracht kent drie manieren van werken:
 
 - Eén bestand naar één PDF: `md2pdf tmp/README.md`
 - Een map samengevoegd naar één PDF: `md2pdf tmp/wiki`
@@ -31,4 +31,21 @@ Bij een map worden alle `.md`-bestanden in die map zelf meegenomen, niet die in 
 alfabetische volgorde op bestandsnaam. Namen die met `_` beginnen worden overgeslagen; wie zo'n
 bestand rechtstreeks als argument geeft, krijgt het wél verwerkt.
 
-Het renderen volgt in een volgende mijlpaal.
+Bij de samengevoegde modus begint elk bronbestand op een nieuwe pagina. Bij `--los` wordt een
+uitvoermap die nog niet bestaat aangemaakt.
+
+## Wat er in de PDF terechtkomt
+
+Koppen, alinea's, vet, cursief, inline code, links, geneste en genummerde lijsten, codeblokken,
+blokcitaten, thematische breuken en tabellen. Tabellen krijgen een vette kopregel, kolommen op
+eigen breedte en een herhaalde kopregel als ze over pagina's lopen.
+
+De tekst wordt gezet in de base-14 fonts van PDF, die coderen in cp1252. Tekens daarbuiten worden
+vertaald waar dat kan — `→` wordt `->` — en anders vervangen door een vraagteken.
+
+## Bekende beperkingen
+
+- Mermaid-blokken worden voorlopig als codeblok weergegeven; echte diagrammen volgen.
+- Inline-opmaak binnen een tabelcel wordt afgevlakt tot platte tekst.
+- Links zijn klikbaar maar niet zichtbaar onderscheiden van gewone tekst.
+- Coderegels die breder zijn dan de tekstkolom worden afgekapt, niet afgebroken.
