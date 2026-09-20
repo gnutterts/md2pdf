@@ -6,6 +6,9 @@ import (
 	"os"
 
 	"github.com/gnutterts/md2pdf/internal/cli"
+	"github.com/gnutterts/md2pdf/internal/markdown"
+	"github.com/gnutterts/md2pdf/internal/pdfout"
+	"github.com/gnutterts/md2pdf/internal/render"
 )
 
 const versie = "md2pdf 0.1.0"
@@ -34,5 +37,24 @@ func uitvoeren(args []string) error {
 }
 
 func renderen(plan cli.Plan) error {
-	return errors.New("nog niet geïmplementeerd: renderen volgt in de volgende mijlpaal")
+	if plan.Modus != cli.ModusEnkel {
+		return errors.New("nog niet geïmplementeerd: samengevoegde en losse uitvoer volgen in de volgende mijlpaal")
+	}
+	if len(plan.Taken) != 1 || len(plan.Taken[0].Bronnen) != 1 {
+		return errors.New("ongeldig uitvoerplan voor één bestand")
+	}
+	taak := plan.Taken[0]
+	bron, err := os.ReadFile(taak.Bronnen[0])
+	if err != nil {
+		return err
+	}
+	blokken, err := markdown.Ontleed(bron)
+	if err != nil {
+		return err
+	}
+	document := pdfout.Nieuw()
+	if err := render.Teken(blokken, document.Vel()); err != nil {
+		return err
+	}
+	return document.Schrijf(taak.Doel)
 }
