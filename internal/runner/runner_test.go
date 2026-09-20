@@ -41,7 +41,7 @@ func TestRunMermaidErrorWarnsAndContinues(t *testing.T) {
 func TestRunSingleWritesPDF(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "README.pdf")
 	plan := cli.Plan{Mode: cli.ModeSingle, Tasks: []cli.Task{{
-		Sources: []string{readPath("README.md")}, Target: target,
+		Sources: []string{readPath("sample.md")}, Target: target,
 	}}}
 	if err := Run(plan, render.Options{}); err != nil {
 		t.Fatal(err)
@@ -56,8 +56,8 @@ func TestRunSingleWritesPDF(t *testing.T) {
 }
 
 func TestRunMergedWritesPages(t *testing.T) {
-	sources := wikiSources()
-	target := filepath.Join(t.TempDir(), "wiki.pdf")
+	sources := pageSources()
+	target := filepath.Join(t.TempDir(), "pages.pdf")
 	if err := Run(cli.Plan{Mode: cli.ModeMerged, Tasks: []cli.Task{{Sources: sources, Target: target}}}, render.Options{}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestRunMergedWritesPages(t *testing.T) {
 
 func TestRunSeparateWritesFiles(t *testing.T) {
 	dirName := t.TempDir()
-	sources := wikiSources()
+	sources := pageSources()
 	tasks := make([]cli.Task, len(sources))
 	for i, source := range sources {
 		tasks[i] = cli.Task{Sources: []string{source}, Target: filepath.Join(dirName, strings.TrimSuffix(filepath.Base(source), ".md")+".pdf")}
@@ -108,7 +108,7 @@ func TestRunSeparateWritesFiles(t *testing.T) {
 
 func TestRunSeparateCreatesTargetDir(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "nieuw", "README.pdf")
-	plan := cli.Plan{Mode: cli.ModeSeparate, Tasks: []cli.Task{{Sources: []string{readPath("README.md")}, Target: target}}}
+	plan := cli.Plan{Mode: cli.ModeSeparate, Tasks: []cli.Task{{Sources: []string{readPath("sample.md")}, Target: target}}}
 	if err := Run(plan, render.Options{}); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestRunCannotWrite(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dirName, 0o755) })
 
 	err := Run(cli.Plan{Mode: cli.ModeSingle, Tasks: []cli.Task{{
-		Sources: []string{readPath("README.md")}, Target: filepath.Join(dirName, "out.pdf"),
+		Sources: []string{readPath("sample.md")}, Target: filepath.Join(dirName, "out.pdf"),
 	}}}, render.Options{})
 	if err == nil {
 		t.Fatal("writing to a read-only directory succeeded")
@@ -162,15 +162,16 @@ func readPath(name string) string {
 	return filepath.Join("..", "..", "testdata", name)
 }
 
-func wikiSources() []string {
+// pageSources lists the eleven pages that a folder read would yield: the
+// two files whose name starts with an underscore are deliberately absent.
+func pageSources() []string {
 	names := []string{
 		"Alpha.md", "Bravo.md", "Charlie.md", "Delta.md", "Echo.md",
-		"Foxtrot.md", "Golf.md", "Hotel.md", "India.md",
-		"Juliett.md", "Kilo.md",
+		"Foxtrot.md", "Golf.md", "Hotel.md", "India.md", "Juliett.md", "Kilo.md",
 	}
 	sources := make([]string, len(names))
 	for i, name := range names {
-		sources[i] = readPath(filepath.Join("wiki", name))
+		sources[i] = readPath(filepath.Join("pages", name))
 	}
 	return sources
 }

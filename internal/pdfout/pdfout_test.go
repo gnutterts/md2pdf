@@ -273,7 +273,7 @@ func pageCount(pdf []byte) int {
 }
 
 func TestRenderREADMEToPDF(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "README.md"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "sample.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

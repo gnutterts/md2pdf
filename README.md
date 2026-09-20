@@ -2,9 +2,9 @@
 
 `md2pdf` converts Markdown to PDF. It has three modes of operation:
 
-- One file to one PDF: `md2pdf tmp/README.md`
-- A directory merged into one PDF: `md2pdf tmp/wiki`
-- One PDF per file in a directory: `md2pdf --separate tmp/wiki`
+- One file to one PDF: `md2pdf testdata/sample.md`
+- A directory merged into one PDF: `md2pdf testdata/pages`
+- One PDF per file in a directory: `md2pdf --separate testdata/pages`
 
 ## Requirements
 
@@ -55,9 +55,9 @@ Without `-o`, output is placed next to the input:
 
 | Input | Output |
 |---|---|
-| `md2pdf tmp/README.md` | `tmp/README.pdf` |
-| `md2pdf tmp/wiki` | `tmp/wiki.pdf`, next to the directory |
-| `md2pdf --separate tmp/wiki` | one PDF next to every source file in `tmp/wiki/` |
+| `md2pdf testdata/sample.md` | `testdata/sample.pdf` |
+| `md2pdf testdata/pages` | `testdata/pages.pdf`, next to the directory |
+| `md2pdf --separate testdata/pages` | one PDF next to every source file in `testdata/pages/` |
 
 With `-o`, the path is a file name in the first two modes and a directory with `--separate`. An `-o`
 that conflicts with this — an existing directory where a file name belongs, or an existing file where a

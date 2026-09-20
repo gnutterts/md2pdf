@@ -122,7 +122,7 @@ func TestParseElements(t *testing.T) {
 }
 
 func TestParseREADME(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "README.md"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "sample.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
