@@ -54,6 +54,8 @@ flowchart TD
 | Headings | yes | Six levels |
 | Tables | yes | Header row repeats across pages |
 | Diagrams | optional | Requires an external renderer |
+| **Bold** and `code` | [Visible link](https://table.example) | ~~Struck text~~ stays styled |
+| Long cell | This deliberately long cell wraps over word boundaries while keeping **bold text** and `code` visible. | enough text |
 
 ## Inline details
 

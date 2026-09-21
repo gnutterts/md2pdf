@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -304,6 +305,7 @@ func (v documentCanvas) Table(rows []markdown.Row) {
 		pdf.SetDrawColor(tr, tg, tb)
 		pdf.SetFillColor(fr, fg, fb)
 		pdf.SetTextColor(txr, txg, txb)
+		v.applyFont()
 		v.resetX()
 	}()
 
@@ -337,22 +339,144 @@ func columnCount(rows []markdown.Row) int {
 	return columns
 }
 
-// cellText joins the spans of a cell so that nothing is lost.
-func cellText(cell markdown.Cell) string {
-	var b strings.Builder
-	for _, span := range cell.Spans {
-		b.WriteString(span.Text)
-	}
-	return b.String()
+// cellRun is a piece of cell text with one visual style.
+type cellRun struct {
+	text               string
+	bold, italic, code bool
+	strike             bool
+	url                string
 }
 
-// setCellFont chooses the font for a cell: bold for the header row, normal for data.
-func (v documentCanvas) setCellFont(header bool) {
-	style := ""
-	if header {
-		style = "B"
+type cellLine []cellRun
+
+// setRunFont selects a run's font. Header cells add bold to every run.
+func (v documentCanvas) setRunFont(run cellRun, header bool) {
+	family, size := "Helvetica", tableFontSize
+	if run.code {
+		family = "Courier"
+		size = math.Round(tableFontSize*0.85*2) / 2
 	}
-	v.d.pdf.SetFont("Helvetica", style, tableFontSize)
+	style := ""
+	if header || run.bold {
+		style += "B"
+	}
+	if run.italic {
+		style += "I"
+	}
+	if run.strike {
+		style += "S"
+	}
+	if run.url != "" {
+		style += "U"
+	}
+	v.d.pdf.SetFont(family, style, size)
+}
+
+func sameRun(a, b cellRun) bool {
+	return a.bold == b.bold && a.italic == b.italic && a.code == b.code &&
+		a.strike == b.strike && a.url == b.url
+}
+
+func appendRun(line *cellLine, run cellRun) {
+	if run.text == "" {
+		return
+	}
+	if n := len(*line); n > 0 && sameRun((*line)[n-1], run) {
+		(*line)[n-1].text += run.text
+		return
+	}
+	*line = append(*line, run)
+}
+
+func (v documentCanvas) runWidth(run cellRun, header bool) float64 {
+	v.setRunFont(run, header)
+	return v.d.pdf.GetStringWidth(text.ToCP1252(run.text))
+}
+
+func (v documentCanvas) lineWidth(line cellLine, header bool) float64 {
+	width := 0.0
+	for _, run := range line {
+		width += v.runWidth(run, header)
+	}
+	return width
+}
+
+// cellLines wraps styled runs at spaces. A word wider than the cell is split
+// character by character, retaining the style of every character.
+func (v documentCanvas) cellLines(cell markdown.Cell, width float64, header bool) []cellLine {
+	available := width - tablePadding
+	lines := []cellLine{{}}
+	pending := cellLine(nil)
+	hasText := false
+
+	flushWord := func(word cellLine) {
+		if len(word) == 0 {
+			return
+		}
+		line := &lines[len(lines)-1]
+		candidate := v.lineWidth(*line, header) + v.lineWidth(pending, header) + v.lineWidth(word, header)
+		if len(*line) > 0 && candidate > available {
+			lines = append(lines, cellLine{})
+			line = &lines[len(lines)-1]
+			pending = nil
+		}
+		wordWidth := v.lineWidth(word, header)
+		if wordWidth <= available {
+			for _, run := range pending {
+				appendRun(line, run)
+			}
+			for _, run := range word {
+				appendRun(line, run)
+			}
+			pending = nil
+			return
+		}
+		// The word cannot fit on an empty line, so split it into characters.
+		pending = nil
+		for _, run := range word {
+			for _, char := range run.text {
+				piece := run
+				piece.text = string(char)
+				if len(*line) > 0 && v.lineWidth(*line, header)+v.runWidth(piece, header) > available {
+					lines = append(lines, cellLine{})
+					line = &lines[len(lines)-1]
+				}
+				appendRun(line, piece)
+			}
+		}
+	}
+
+	word := cellLine(nil)
+	flush := func() { flushWord(word); word = nil }
+	for _, span := range cell.Spans {
+		run := cellRun{text: "", bold: span.Bold, italic: span.Italic, code: span.Code, strike: span.Strike, url: span.URL}
+		for _, char := range span.Text {
+			hasText = true
+			switch char {
+			case '\n':
+				flush()
+				pending = nil
+				lines = append(lines, cellLine{})
+			case ' ':
+				flush()
+				run.text = " "
+				appendRun(&pending, run)
+			default:
+				run.text = string(char)
+				appendRun(&word, run)
+			}
+		}
+	}
+	flush()
+	if len(pending) > 0 {
+		for _, run := range pending {
+			appendRun(&lines[len(lines)-1], run)
+		}
+	}
+	if !hasText {
+		return nil
+	}
+	return lines
 }
 
 // columnWidths measures the widest cell per column and scales down when needed.
@@ -364,8 +488,7 @@ func (v documentCanvas) columnWidths(rows []markdown.Row, columns int) []float64
 			if column >= len(row.Cells) {
 				continue
 			}
-			v.setCellFont(row.Header)
-			cellWidth := v.d.pdf.GetStringWidth(text.ToCP1252(cellText(row.Cells[column]))) + tablePadding
+			cellWidth := v.lineWidth(cellRuns(row.Cells[column]), row.Header) + tablePadding
 			if cellWidth > width {
 				width = cellWidth
 			}
@@ -386,20 +509,16 @@ func (v documentCanvas) columnWidths(rows []markdown.Row, columns int) []float64
 	return widths
 }
 
-// linesFor wraps cell content at word boundaries to fit within the column width.
-// The full column width is passed in: fpdf.SplitLines already subtracts the
-// cell margin twice (wmax = w - 2*cMargin), so subtracting it here again wraps too early.
-func (v documentCanvas) linesFor(cell markdown.Cell, width float64) []string {
-	text := text.ToCP1252(cellText(cell))
-	if text == "" {
-		return nil
+// cellRuns converts spans to runs for width calculations.
+func cellRuns(cell markdown.Cell) cellLine {
+	var runs cellLine
+	for _, span := range cell.Spans {
+		appendRun(&runs, cellRun{
+			text: span.Text, bold: span.Bold, italic: span.Italic,
+			code: span.Code, strike: span.Strike, url: span.URL,
+		})
 	}
-	lines := v.d.pdf.SplitLines([]byte(text), width)
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		out[i] = string(line)
-	}
-	return out
+	return runs
 }
 
 // rowHeight is the height of the tallest cell, with a minimum of 16 points.
@@ -409,8 +528,7 @@ func (v documentCanvas) rowHeight(row markdown.Row, widths []float64) float64 {
 		if column >= len(widths) {
 			break
 		}
-		v.setCellFont(row.Header)
-		lines := v.linesFor(cell, widths[column])
+		lines := v.cellLines(cell, widths[column], row.Header)
 		cellHeight := float64(len(lines)) * tableLineHeight
 		if cellHeight > height {
 			height = cellHeight
@@ -451,17 +569,38 @@ func (v documentCanvas) drawRow(row markdown.Row, widths []float64) {
 // drawCell draws the background, border, and text of one cell.
 func (v documentCanvas) drawCell(cell markdown.Cell, header bool, x, y, width, height float64) {
 	pdf := v.d.pdf
-	v.setCellFont(header)
 	if header {
 		pdf.SetFillColor(tableGray, tableGray, tableGray)
 		pdf.Rect(x, y, width, height, "FD")
 	} else {
 		pdf.Rect(x, y, width, height, "D")
 	}
-	lines := v.linesFor(cell, width)
+	lines := v.cellLines(cell, width, header)
 	for i, line := range lines {
-		pdf.SetXY(x, y+float64(i)*tableLineHeight)
-		pdf.CellFormat(width, tableLineHeight, line, "", 0, alignment(cell.Alignment), false, 0, "")
+		textWidth := v.lineWidth(line, header)
+		start := x + tablePadding/2
+		switch alignment(cell.Alignment) {
+		case "C":
+			start += (width - tablePadding - textWidth) / 2
+		case "R":
+			start += width - tablePadding - textWidth
+		}
+		for _, run := range line {
+			v.setRunFont(run, header)
+			runWidth := pdf.GetStringWidth(text.ToCP1252(run.text))
+			if run.url != "" {
+				pdf.SetTextColor(0, 70, 160)
+			}
+			// CellFormat supplies the baseline and the underline/strike drawing.
+			// Its margin is compensated so text starts at start exactly.
+			pdf.SetXY(start-tablePadding/2, y+float64(i)*tableLineHeight)
+			pdf.CellFormat(runWidth+tablePadding, tableLineHeight, text.ToCP1252(run.text), "", 0, "", false, 0, "")
+			if run.url != "" {
+				pdf.LinkString(start, y+float64(i)*tableLineHeight, runWidth, tableLineHeight, run.url)
+				pdf.SetTextColor(0, 0, 0)
+			}
+			start += runWidth
+		}
 	}
 }
 

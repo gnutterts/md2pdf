@@ -392,6 +392,65 @@ func TestTableTextIsInContentStream(t *testing.T) {
 	}
 }
 
+func TestCellLinesPreserveStyledText(t *testing.T) {
+	document := New()
+	canvas := document.Canvas().(documentCanvas)
+	tests := []struct {
+		name  string
+		cell  markdown.Cell
+		width float64
+		lines int
+	}{
+		{"one run", markdown.Cell{Spans: []markdown.Span{{Text: "plain"}}}, 100, 1},
+		{"mixed runs", markdown.Cell{Spans: []markdown.Span{{Text: "bold", Bold: true}, {Text: " code", Code: true}}}, 100, 1},
+		{"breaks between runs", markdown.Cell{Spans: []markdown.Span{{Text: "first "}, {Text: "second", Bold: true}}}, 50, 2},
+		{"wide word", markdown.Cell{Spans: []markdown.Span{{Text: "toolong"}}}, 40, 2},
+		{"hard newline", markdown.Cell{Spans: []markdown.Span{{Text: "one\ntwo"}}}, 100, 2},
+		{"empty cell", markdown.Cell{}, 100, 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			lines := canvas.cellLines(test.cell, test.width, false)
+			if len(lines) != test.lines {
+				t.Fatalf("got %d lines, want %d", len(lines), test.lines)
+			}
+			var got, want strings.Builder
+			for _, line := range lines {
+				for _, run := range line {
+					got.WriteString(run.text)
+				}
+			}
+			for _, span := range test.cell.Spans {
+				want.WriteString(span.Text)
+			}
+			if strings.ReplaceAll(strings.ReplaceAll(got.String(), " ", ""), "\n", "") != strings.ReplaceAll(strings.ReplaceAll(want.String(), " ", ""), "\n", "") {
+				t.Fatalf("run text %q differs from span text %q", got.String(), want.String())
+			}
+		})
+	}
+}
+
+func TestTableStyledRunsAndLinks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "styled-table.pdf")
+	document := New()
+	document.Canvas().Table([]markdown.Row{{Cells: []markdown.Cell{{Spans: []markdown.Span{
+		{Text: "bold", Bold: true}, {Text: " code", Code: true}, {Text: " link", URL: "https://table.example"},
+	}}}}})
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(content, []byte("/BaseFont /Helvetica-Bold")) || !bytes.Contains(content, []byte("/BaseFont /Courier")) {
+		t.Fatal("styled table does not embed bold Helvetica and Courier")
+	}
+	if !bytes.Contains(content, []byte("/URI (https://table.example)")) {
+		t.Fatal("table link annotation is missing")
+	}
+}
+
 func TestTableTooWideWritesWithoutError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "breed.pdf")
 	document := New()
