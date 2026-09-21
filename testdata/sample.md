@@ -78,3 +78,20 @@ starts a new line.
 > A block quote closes the document, with an accent for good measure: één.
 
 ---
+
+## Structure
+
+- A list item with two paragraphs.
+
+  The second paragraph stays inside the item, and a code block follows:
+
+  ```go
+  fmt.Println("inside")
+  ```
+
+> A quote with two paragraphs.
+>
+> The second paragraph stays inside the quote.
+
+> - A list inside a quote
+> - A second item inside the quote

@@ -77,6 +77,19 @@ func (v documentCanvas) Indent(p float64) {
 }
 func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) }
 
+// Marker draws a list marker in the gutter before the current left margin,
+// and leaves x at the left margin or just after the marker if the marker is
+// wider than the gutter.
+func (v documentCanvas) Marker(s string) {
+	const gutter = 14.0
+	left := margin + v.d.indent
+	v.d.pdf.SetX(left - gutter)
+	v.d.pdf.Write(15, text.ToCP1252(s))
+	if v.d.pdf.GetX() < left {
+		v.d.pdf.SetX(left)
+	}
+}
+
 func (v documentCanvas) CodeBlock(lines []string) {
 	limit := int(v.contentWidth() / v.d.pdf.GetStringWidth("M"))
 	for _, line := range lines {

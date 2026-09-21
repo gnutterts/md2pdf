@@ -130,6 +130,87 @@ func TestLongListItemStaysIndented(t *testing.T) {
 	}
 }
 
+func TestListItemContinuationSharesTextColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "continuation.pdf")
+	document := New()
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Depth: 0, Spans: []markdown.Span{{Text: "first"}}},
+		{Kind: markdown.ListItem, Depth: 0, Continued: true, InItem: true, Spans: []markdown.Span{{Text: "second"}}},
+	}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := contentStream(t, content)
+	columns := textColumns(t, stream)
+	if len(columns) < 3 {
+		t.Fatalf("too few text columns to compare paragraphs: %q", stream)
+	}
+	if columns[1] != columns[2] {
+		t.Fatalf("second paragraph is at %.2f, want %.2f: %q", columns[2], columns[1], stream)
+	}
+}
+
+func TestCodeBlockInListItemIndentsPastMarker(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "code.pdf")
+	document := New()
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Depth: 0, Spans: []markdown.Span{{Text: "item"}}},
+		{Kind: markdown.CodeBlock, Depth: 0, InItem: true, Lines: []string{"code"}},
+	}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := contentStream(t, content)
+	columns := textColumns(t, stream)
+	if len(columns) < 3 {
+		t.Fatalf("too few text columns to compare code and marker: %q", stream)
+	}
+	if columns[2] <= columns[0] {
+		t.Fatalf("code block is at %.2f, want right of marker at %.2f: %q", columns[2], columns[0], stream)
+	}
+}
+
+func TestQuotedListItemIndentsPastPlainListItem(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "quote-list.pdf")
+	document := New()
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Depth: 0, Spans: []markdown.Span{{Text: "plain"}}},
+		{Kind: markdown.ListItem, Depth: 0, Quote: 1, Spans: []markdown.Span{{Text: "quoted"}}},
+	}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := contentStream(t, content)
+	columns := textColumns(t, stream)
+	if len(columns) < 4 {
+		t.Fatalf("too few text columns to compare quoted and plain items: %q", stream)
+	}
+	if columns[3] <= columns[1] {
+		t.Fatalf("quoted item text is at %.2f, want right of plain item text at %.2f: %q", columns[3], columns[1], stream)
+	}
+}
+
 func TestTableTextIsInContentStream(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "table.pdf")
 	document := New()

@@ -22,7 +22,6 @@ const (
 	Paragraph
 	ListItem
 	CodeBlock
-	Quote
 	Rule
 	Table
 )
@@ -68,16 +67,30 @@ const (
 
 // Block is part of a document.
 type Block struct {
-	Kind     Kind
-	Level    int
-	Depth    int
-	Ordered  bool
-	Number   int
-	Task     TaskState
-	Language string
-	Spans    []Span
-	Lines    []string
-	Rows     []Row
+	Kind      Kind
+	Level     int
+	Depth     int
+	Ordered   bool
+	Number    int
+	Task      TaskState
+	Language  string
+	Continued bool
+	InItem    bool
+	Quote     int
+	Spans     []Span
+	Lines     []string
+	Rows      []Row
+}
+
+// walkParams carries the context in which blocks are walked.
+type walkParams struct {
+	depth   int
+	ordered bool
+	number  int
+	quote   int
+	inList  bool
+	first   bool
+	inItem  bool
 }
 
 // Parse reads Markdown into a flat document structure.
@@ -86,58 +99,124 @@ func Parse(source []byte) ([]Block, error) {
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
 	doc := md.Parser().Parse(text.NewReader(source))
 	var blocks []Block
-	walkChildren(doc, source, &blocks, 0, false, false, 0)
+	walkChildren(doc, source, &blocks, walkParams{})
 	return blocks, nil
 }
 
-func walkChildren(parent ast.Node, source []byte, out *[]Block, depth int, inList, ordered bool, number int) {
+func walkChildren(parent ast.Node, source []byte, out *[]Block, p walkParams) {
 	for kind := parent.FirstChild(); kind != nil; kind = kind.NextSibling() {
-		switch n := kind.(type) {
-		case *ast.Heading:
-			*out = append(*out, Block{Kind: Heading, Level: n.Level, Spans: spans(n, source, false, false, false, "")})
-		case *ast.Paragraph, *ast.TextBlock:
-			kind := Paragraph
-			if inList {
-				kind = ListItem
+		walkBlock(kind, source, out, p)
+	}
+}
+
+func walkBlock(n ast.Node, source []byte, out *[]Block, p walkParams) {
+	switch v := n.(type) {
+	case *ast.Heading:
+		*out = append(*out, Block{Kind: Heading, Level: v.Level, Depth: p.depth, InItem: p.inItem, Quote: p.quote, Spans: spans(n, source, false, false, false, "")})
+	case *ast.Paragraph, *ast.TextBlock:
+		if p.inList {
+			block := Block{Kind: ListItem, Depth: p.depth, Ordered: p.ordered, Number: p.number, Quote: p.quote, Spans: spans(n, source, false, false, false, "")}
+			if !p.first {
+				block.Continued = true
+				block.InItem = true
 			}
-			block := Block{Kind: kind, Depth: depth, Ordered: ordered, Number: number, Spans: spans(n, source, false, false, false, "")}
-			if inList {
-				block.Task = taskState(n)
-				if block.Task != NoTask && len(block.Spans) > 0 {
-					block.Spans[0].Text = strings.TrimPrefix(block.Spans[0].Text, " ")
-				}
+			block.Task = taskState(n)
+			if block.Task != NoTask && len(block.Spans) > 0 {
+				block.Spans[0].Text = strings.TrimPrefix(block.Spans[0].Text, " ")
 			}
 			*out = append(*out, block)
-		case *ast.List:
-			listDepth := depth
-			if inList {
-				listDepth++
+			return
+		}
+		*out = append(*out, Block{Kind: Paragraph, Depth: p.depth, InItem: p.inItem, Quote: p.quote, Spans: spans(n, source, false, false, false, "")})
+	case *ast.List:
+		walkList(v, source, out, p)
+	case *ast.FencedCodeBlock:
+		block := codeBlock(v, source, string(v.Language(source)))
+		block.Depth = p.depth
+		block.InItem = p.inItem
+		block.Quote = p.quote
+		*out = append(*out, block)
+	case *ast.CodeBlock:
+		block := codeBlock(v, source, "")
+		block.Depth = p.depth
+		block.InItem = p.inItem
+		block.Quote = p.quote
+		*out = append(*out, block)
+	case *ast.Blockquote:
+		child := p
+		child.inList = false
+		child.first = false
+		child.quote++
+		walkChildren(v, source, out, child)
+	case *ast.ThematicBreak:
+		*out = append(*out, Block{Kind: Rule, Depth: p.depth, InItem: p.inItem, Quote: p.quote})
+	case *extast.Table:
+		block := table(v, source)
+		block.Depth = p.depth
+		block.InItem = p.inItem
+		block.Quote = p.quote
+		*out = append(*out, block)
+	}
+}
+
+func walkList(n *ast.List, source []byte, out *[]Block, p walkParams) {
+	listDepth := p.depth
+	if p.inList {
+		listDepth++
+	}
+	next := n.Start
+	for item := n.FirstChild(); item != nil; item = item.NextSibling() {
+		if li, ok := item.(*ast.ListItem); ok {
+			number := 0
+			if n.IsOrdered() {
+				number = next
+				next++
 			}
-			next := n.Start
-			for item := n.FirstChild(); item != nil; item = item.NextSibling() {
-				if li, ok := item.(*ast.ListItem); ok {
-					number := 0
-					if n.IsOrdered() {
-						number = next
-						next++
-					}
-					walkChildren(li, source, out, listDepth, true, n.IsOrdered(), number)
-				}
-			}
-		case *ast.FencedCodeBlock:
-			*out = append(*out, codeBlock(n, source, string(n.Language(source))))
-		case *ast.CodeBlock:
-			*out = append(*out, codeBlock(n, source, ""))
-		case *ast.Blockquote:
-			for line := n.FirstChild(); line != nil; line = line.NextSibling() {
-				*out = append(*out, Block{Kind: Quote, Spans: spans(line, source, false, true, false, "")})
-			}
-		case *ast.ThematicBreak:
-			*out = append(*out, Block{Kind: Rule})
-		case *extast.Table:
-			*out = append(*out, table(n, source))
+			walkListItem(li, source, out, walkParams{
+				depth:   listDepth,
+				ordered: n.IsOrdered(),
+				number:  number,
+				quote:   p.quote,
+			})
 		}
 	}
+}
+
+func walkListItem(item *ast.ListItem, source []byte, out *[]Block, p walkParams) {
+	marker := false
+	if !startsWithText(item) {
+		// An item that opens with a code block, a list or nothing still gets its marker.
+		*out = append(*out, Block{Kind: ListItem, Depth: p.depth, Ordered: p.ordered, Number: p.number, Quote: p.quote})
+		marker = true
+	}
+	for child := item.FirstChild(); child != nil; child = child.NextSibling() {
+		switch child.(type) {
+		case *ast.List:
+			walkList(child.(*ast.List), source, out, walkParams{depth: p.depth, quote: p.quote, inList: true})
+		case *ast.Paragraph, *ast.TextBlock:
+			childP := walkParams{
+				depth:   p.depth,
+				ordered: p.ordered,
+				number:  p.number,
+				quote:   p.quote,
+				inList:  true,
+				first:   !marker,
+				inItem:  marker,
+			}
+			marker = true
+			walkBlock(child, source, out, childP)
+		default:
+			walkBlock(child, source, out, walkParams{depth: p.depth, quote: p.quote, inItem: true})
+		}
+	}
+}
+
+func startsWithText(item *ast.ListItem) bool {
+	switch item.FirstChild().(type) {
+	case *ast.Paragraph, *ast.TextBlock:
+		return true
+	}
+	return false
 }
 
 func codeBlock(n ast.Node, source []byte, language string) Block {

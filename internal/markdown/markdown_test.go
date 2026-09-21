@@ -105,7 +105,7 @@ func TestParseElements(t *testing.T) {
 			}
 		}},
 		{"quote", "> woorden", func(t *testing.T, b []Block) {
-			if b[0].Kind != Quote {
+			if b[0].Kind != Paragraph || b[0].Quote != 1 {
 				t.Fatal(b)
 			}
 		}},
@@ -123,6 +123,95 @@ func TestParseElements(t *testing.T) {
 			}
 			test.check(t, blocks)
 		})
+	}
+}
+
+func TestParseListItemWithTwoParagraphs(t *testing.T) {
+	blocks, err := Parse([]byte("- first paragraph\n\n  second paragraph\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("Parse returned %d blocks, want 2: %v", len(blocks), blocks)
+	}
+	first, second := blocks[0], blocks[1]
+	if first.Kind != ListItem || first.Continued || first.InItem {
+		t.Fatalf("first block = %v, want a marker list item", first)
+	}
+	if second.Kind != ListItem || !second.Continued || !second.InItem {
+		t.Fatalf("second block = %v, want a continued list item", second)
+	}
+	if second.Depth != first.Depth {
+		t.Fatalf("continuation depth = %d, want %d", second.Depth, first.Depth)
+	}
+}
+
+func TestParseCodeBlockInListItem(t *testing.T) {
+	blocks, err := Parse([]byte("- item\n\n  ```go\n  x()\n  ```\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("Parse returned %d blocks, want 2: %v", len(blocks), blocks)
+	}
+	code := blocks[1]
+	if code.Kind != CodeBlock || !code.InItem || code.Depth != 0 || code.Language != "go" {
+		t.Fatalf("code block = %v, want an in-item go block at depth 0", code)
+	}
+}
+
+func TestParseListInQuote(t *testing.T) {
+	blocks, err := Parse([]byte("> - een\n> - twee\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("Parse returned %d blocks, want 2: %v", len(blocks), blocks)
+	}
+	for i, block := range blocks {
+		if block.Kind != ListItem || block.Quote != 1 {
+			t.Fatalf("block %d = %v, want a list item with Quote 1", i, block)
+		}
+	}
+}
+
+func TestParseQuoteWithTwoParagraphs(t *testing.T) {
+	blocks, err := Parse([]byte("> first paragraph\n>\n> second paragraph\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("Parse returned %d blocks, want 2: %v", len(blocks), blocks)
+	}
+	for i, block := range blocks {
+		if block.Kind != Paragraph || block.Quote != 1 {
+			t.Fatalf("block %d = %v, want a paragraph with Quote 1", i, block)
+		}
+	}
+}
+
+func TestParseNestedQuote(t *testing.T) {
+	blocks, err := Parse([]byte("> > nested\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Kind != Paragraph || blocks[0].Quote != 2 {
+		t.Fatalf("Parse returned %v, want one paragraph with Quote 2", blocks)
+	}
+}
+
+func TestParseTightListUnchanged(t *testing.T) {
+	blocks, err := Parse([]byte("- een\n- twee\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("Parse returned %d blocks, want 2: %v", len(blocks), blocks)
+	}
+	for i, block := range blocks {
+		if block.Kind != ListItem || block.Continued || block.InItem || block.Quote != 0 {
+			t.Fatalf("block %d = %v, want a plain list item", i, block)
+		}
 	}
 }
 
@@ -370,5 +459,23 @@ func TestParseTableAlignment(t *testing.T) {
 		if rows[0].Cells[column].Alignment != alignment {
 			t.Fatalf("column %d has alignment %v, want %v", column, rows[0].Cells[column].Alignment, alignment)
 		}
+	}
+}
+
+func TestParseItemWithoutLeadingTextKeepsMarker(t *testing.T) {
+	tests := []struct{ name, source string }{
+		{"code first", "1. ```\n   code\n   ```\n"},
+		{"empty item", "-\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			blocks, err := Parse([]byte(test.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(blocks) == 0 || blocks[0].Kind != ListItem || blocks[0].Continued {
+				t.Fatalf("want a marker block first, got %+v", blocks)
+			}
+		})
 	}
 }

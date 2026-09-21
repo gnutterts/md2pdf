@@ -40,7 +40,10 @@ func (n *fakeCanvas) LineBreak(h float64) {
 	n.calls = append(n.calls, fmt.Sprintf("end:%g", h))
 }
 func (n *fakeCanvas) Indent(p float64) { n.calls = append(n.calls, "indent") }
-func (n *fakeCanvas) HangingIndent()   { n.calls = append(n.calls, "hanging") }
+func (n *fakeCanvas) Marker(s string) {
+	n.calls = append(n.calls, "marker:"+s+":"+n.style.string())
+}
+func (n *fakeCanvas) HangingIndent() { n.calls = append(n.calls, "hanging") }
 func (n *fakeCanvas) CodeBlock(r []string) {
 	n.calls = append(n.calls, "code:"+strings.Join(r, ","))
 }
@@ -118,10 +121,10 @@ func TestDrawOrderAndStyles(t *testing.T) {
 		want   []string
 	}{
 		{"heading and paragraph", []markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Titel"}}}, {Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "text"}}}}, []string{"style:Helvetica:B:20", "text:Titel:Helvetica:B:20", "style:Helvetica::11", "text:text:Helvetica::11"}},
-		{"nested list", []markdown.Block{{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: "inside"}}}}, []string{"indent", "text:• :Helvetica::11", "text:inside:Helvetica::11", "indent"}},
+		{"nested list", []markdown.Block{{Kind: markdown.ListItem, Depth: 1, Spans: []markdown.Span{{Text: "inside"}}}}, []string{"indent", "marker:• :Helvetica::11", "text:inside:Helvetica::11", "indent"}},
 		{"code block", []markdown.Block{{Kind: markdown.CodeBlock, Lines: []string{"x"}}}, []string{"indent", "style:Courier::9.5", "code:x", "indent"}},
 		{"link", []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "site", URL: "https://x"}}}}, []string{"style:Helvetica::11", "link:site:https://x:Helvetica::11"}},
-		{"quote", []markdown.Block{{Kind: markdown.Quote, Spans: []markdown.Span{{Text: "woord"}}}}, []string{"indent", "style:Helvetica:I:11", "text:woord:Helvetica:I:11", "indent"}},
+		{"quote", []markdown.Block{{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "woord"}}}}, []string{"indent", "style:Helvetica:I:11", "text:woord:Helvetica:I:11", "indent"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -140,8 +143,8 @@ func TestDrawTaskItems(t *testing.T) {
 		task markdown.TaskState
 		want string
 	}{
-		{"open", markdown.TaskOpen, "text:[ ] :Helvetica::11"},
-		{"done", markdown.TaskDone, "text:[x] :Helvetica::11"},
+		{"open", markdown.TaskOpen, "marker:[ ] :Helvetica::11"},
+		{"done", markdown.TaskDone, "marker:[x] :Helvetica::11"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -151,7 +154,7 @@ func TestDrawTaskItems(t *testing.T) {
 				t.Fatal(err)
 			}
 			checkOrder(t, canvas.calls, []string{test.want, "text:doe:Helvetica::11"})
-			if contains(canvas.calls, "text:• :Helvetica::11") {
+			if contains(canvas.calls, "marker:• :Helvetica::11") {
 				t.Fatalf("task item drew a bullet: %q", canvas.calls)
 			}
 		})
@@ -164,7 +167,38 @@ func TestDrawOrderedTaskKeepsNumber(t *testing.T) {
 	if err := Draw(blocks, canvas, Options{}); err != nil {
 		t.Fatal(err)
 	}
-	checkOrder(t, canvas.calls, []string{"text:3. [x] :Helvetica::11", "text:doe:Helvetica::11"})
+	checkOrder(t, canvas.calls, []string{"marker:3. [x] :Helvetica::11", "text:doe:Helvetica::11"})
+}
+
+func TestDrawContinuedListItemSkipsMarker(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{{Kind: markdown.ListItem, Depth: 0, Continued: true, Spans: []markdown.Span{{Text: "vervolg"}}}}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "marker:") {
+			t.Fatalf("continuation drew a marker: %q", canvas.calls)
+		}
+	}
+	checkOrder(t, canvas.calls, []string{"text:vervolg:Helvetica::11"})
+}
+
+func TestDrawListItemDrawsOneMarker(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{{Kind: markdown.ListItem, Depth: 0, Spans: []markdown.Span{{Text: "een"}}}}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	markers := 0
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "marker:") {
+			markers++
+		}
+	}
+	if markers != 1 {
+		t.Fatalf("item drew %d markers, want 1: %q", markers, canvas.calls)
+	}
 }
 
 func TestDrawTable(t *testing.T) {
