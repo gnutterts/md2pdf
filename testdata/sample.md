@@ -81,6 +81,16 @@ starts a new line.
 
 ---
 
+## Raw HTML
+
+A line break inside a paragraph: Line one<br>line two<br/>line three.
+
+| Element | HTML |
+|---|---|
+| Break | x<br>y |
+
+<div align="center"><img src="logo.png" alt="Project logo"><p>Centered &amp; entity.</p></div>
+
 ## Structure
 
 - A list item with two paragraphs.

@@ -151,6 +151,10 @@ func walkBlock(n ast.Node, source []byte, out *[]Block, p walkParams) {
 		walkChildren(v, source, out, child)
 	case *ast.ThematicBreak:
 		*out = append(*out, Block{Kind: Rule, Depth: p.depth, InItem: p.inItem, Quote: p.quote})
+	case *ast.HTMLBlock:
+		for _, text := range htmlText(htmlBlockText(v, source)) {
+			*out = append(*out, Block{Kind: Paragraph, Depth: p.depth, InItem: p.inItem, Quote: p.quote, Spans: []Span{{Text: text}}})
+		}
 	case *extast.Table:
 		block := table(v, source)
 		block.Depth = p.depth
@@ -158,6 +162,14 @@ func walkBlock(n ast.Node, source []byte, out *[]Block, p walkParams) {
 		block.Quote = p.quote
 		*out = append(*out, block)
 	}
+}
+
+func htmlBlockText(n *ast.HTMLBlock, source []byte) string {
+	text := string(n.Lines().Value(source))
+	if n.HasClosure() {
+		text += string(n.ClosureLine.Value(source))
+	}
+	return text
 }
 
 func walkList(n *ast.List, source []byte, out *[]Block, p walkParams) {
@@ -324,6 +336,10 @@ func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Spa
 			appendSpan(string(x.Value), v, c, co, s, u)
 		case *ast.CodeSpan:
 			appendSpan(string(x.Text(source)), v, c, true, s, u)
+		case *ast.RawHTML:
+			if isBreakTag(x.Segments.Value(source)) {
+				appendSpan("\n", v, c, co, s, u)
+			}
 		case *ast.AutoLink:
 			label := string(x.Label(source))
 			linkURL := string(x.URL(source))
