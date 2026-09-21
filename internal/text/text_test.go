@@ -32,3 +32,9 @@ func TestToCP1252ReplacesUnknownCharacter(t *testing.T) {
 		t.Fatalf("received %q", got)
 	}
 }
+
+func TestToCP1252KeepsLineFeed(t *testing.T) {
+	if got := ToCP1252("a\nb"); got != "a\nb" {
+		t.Fatalf("received %q", got)
+	}
+}

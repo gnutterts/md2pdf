@@ -134,6 +134,39 @@ func TestDrawOrderAndStyles(t *testing.T) {
 	}
 }
 
+func TestDrawTaskItems(t *testing.T) {
+	tests := []struct {
+		name string
+		task markdown.TaskState
+		want string
+	}{
+		{"open", markdown.TaskOpen, "text:[ ] :Helvetica::11"},
+		{"done", markdown.TaskDone, "text:[x] :Helvetica::11"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			canvas := &fakeCanvas{}
+			blocks := []markdown.Block{{Kind: markdown.ListItem, Task: test.task, Spans: []markdown.Span{{Text: "doe"}}}}
+			if err := Draw(blocks, canvas, Options{}); err != nil {
+				t.Fatal(err)
+			}
+			checkOrder(t, canvas.calls, []string{test.want, "text:doe:Helvetica::11"})
+			if contains(canvas.calls, "text:• :Helvetica::11") {
+				t.Fatalf("task item drew a bullet: %q", canvas.calls)
+			}
+		})
+	}
+}
+
+func TestDrawOrderedTaskKeepsNumber(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{{Kind: markdown.ListItem, Ordered: true, Number: 3, Task: markdown.TaskDone, Spans: []markdown.Span{{Text: "doe"}}}}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	checkOrder(t, canvas.calls, []string{"text:3. [x] :Helvetica::11", "text:doe:Helvetica::11"})
+}
+
 func TestDrawTable(t *testing.T) {
 	blocks := []markdown.Block{{Kind: markdown.Table, Rows: []markdown.Row{
 		{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "A"}}}, {Spans: []markdown.Span{{Text: "B"}}}}},

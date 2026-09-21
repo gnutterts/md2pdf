@@ -50,6 +50,26 @@ flowchart TD
 | Tables | yes | Header row repeats across pages |
 | Diagrams | optional | Requires an external renderer |
 
+## Inline details
+
+Autolinks stay visible and clickable: <https://a.example>, www.b.example and c@d.example.
+A table cell keeps its autolink too:
+
+| Link |
+|---|
+| <https://a.example> |
+
+Escapes lose their backslashes: \*not\*, 5 \> 3 and a\_b. Entities resolve:
+&copy; &amp; &#8594; &#x41;.
+
+A hard line break in a paragraph:  
+starts a new line.
+
+- [ ] open
+- [x] done
+- A hard line break in a list item:  
+  starts a new line
+
 > A block quote closes the document, with an accent for good measure: één.
 
 ---

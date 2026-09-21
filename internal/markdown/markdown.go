@@ -11,6 +11,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // Kind is the kind of block in a document.
@@ -56,6 +57,15 @@ type Row struct {
 	Header bool
 }
 
+// TaskState is the state of a task list item checkbox.
+type TaskState int
+
+const (
+	NoTask TaskState = iota
+	TaskOpen
+	TaskDone
+)
+
 // Block is part of a document.
 type Block struct {
 	Kind     Kind
@@ -63,6 +73,7 @@ type Block struct {
 	Depth    int
 	Ordered  bool
 	Number   int
+	Task     TaskState
 	Language string
 	Spans    []Span
 	Lines    []string
@@ -88,7 +99,14 @@ func walkChildren(parent ast.Node, source []byte, out *[]Block, depth int, inLis
 			if inList {
 				kind = ListItem
 			}
-			*out = append(*out, Block{Kind: kind, Depth: depth, Ordered: ordered, Number: number, Spans: spans(n, source, false, false, false, "")})
+			block := Block{Kind: kind, Depth: depth, Ordered: ordered, Number: number, Spans: spans(n, source, false, false, false, "")}
+			if inList {
+				block.Task = taskState(n)
+				if block.Task != NoTask && len(block.Spans) > 0 {
+					block.Spans[0].Text = strings.TrimPrefix(block.Spans[0].Text, " ")
+				}
+			}
+			*out = append(*out, block)
 		case *ast.List:
 			listDepth := depth
 			if inList {
@@ -161,6 +179,38 @@ func alignment(cell ast.Node) Alignment {
 	}
 }
 
+func taskState(n ast.Node) TaskState {
+	first := n.FirstChild()
+	box, ok := first.(*extast.TaskCheckBox)
+	if !ok {
+		return NoTask
+	}
+	if box.IsChecked {
+		return TaskDone
+	}
+	return TaskOpen
+}
+
+// resolveText removes backslash escapes and resolves entity and numeric
+// references in one pass, so that an escaped ampersand stays literal.
+func resolveText(b []byte) []byte {
+	var out []byte
+	start := 0
+	for i := 0; i+1 < len(b); i++ {
+		if b[i] == '\\' && util.IsPunct(b[i+1]) {
+			out = append(out, resolveReferences(b[start:i])...)
+			out = append(out, b[i+1])
+			i++
+			start = i + 1
+		}
+	}
+	return append(out, resolveReferences(b[start:])...)
+}
+
+func resolveReferences(b []byte) []byte {
+	return util.ResolveEntityNames(util.ResolveNumericReferences(b))
+}
+
 func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Span {
 	var out []Span
 	var loop func(ast.Node, bool, bool, bool, string)
@@ -177,7 +227,11 @@ func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Spa
 	loop = func(k ast.Node, v, c, co bool, u string) {
 		switch x := k.(type) {
 		case *ast.Text:
-			text := string(x.Segment.Value(source))
+			segment := x.Segment.Value(source)
+			if !x.IsRaw() {
+				segment = resolveText(segment)
+			}
+			text := string(segment)
 			if x.SoftLineBreak() {
 				text += " "
 			}
@@ -189,6 +243,13 @@ func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Spa
 			appendSpan(string(x.Value), v, c, co, u)
 		case *ast.CodeSpan:
 			appendSpan(string(x.Text(source)), v, c, true, u)
+		case *ast.AutoLink:
+			label := string(x.Label(source))
+			linkURL := string(x.URL(source))
+			if x.AutoLinkType == ast.AutoLinkEmail {
+				linkURL = "mailto:" + label
+			}
+			appendSpan(label, v, c, co, linkURL)
 		case *ast.Emphasis:
 			for q := x.FirstChild(); q != nil; q = q.NextSibling() {
 				loop(q, v || x.Level >= 2, c || x.Level == 1 || x.Level == 3, co, u)

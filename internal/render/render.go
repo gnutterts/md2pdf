@@ -88,11 +88,17 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 			canvas.Indent(float64(block.Depth) * 14)
 			base := baseStyle{family: "Helvetica", size: 11}
 			canvas.Style(base.family, base.bold, base.italic, base.size)
+			marker := "• "
 			if block.Ordered {
-				canvas.Text(strconv.Itoa(block.Number) + ". ")
-			} else {
-				canvas.Text("• ")
+				marker = strconv.Itoa(block.Number) + ". "
 			}
+			switch block.Task {
+			case markdown.TaskOpen:
+				marker = taskMarker(block, "[ ] ")
+			case markdown.TaskDone:
+				marker = taskMarker(block, "[x] ")
+			}
+			canvas.Text(marker)
 			canvas.HangingIndent()
 			spans(canvas, block.Spans, base)
 			canvas.LineBreak(heightFor(base.size))
@@ -128,6 +134,15 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 		first = false
 	}
 	return canvas.Err()
+}
+
+// taskMarker keeps the number of an ordered task item and replaces the bullet
+// of an unordered one.
+func taskMarker(block markdown.Block, box string) string {
+	if block.Ordered {
+		return strconv.Itoa(block.Number) + ". " + box
+	}
+	return box
 }
 
 func drawCodeBlock(canvas Canvas, lines []string) {

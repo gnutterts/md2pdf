@@ -30,6 +30,8 @@ func ToCP1252(s string) string {
 			b.WriteByte('x')
 		case '\u00a0':
 			b.WriteByte(' ')
+		case '\n':
+			b.WriteByte('\n')
 		default:
 			if r >= 0x20 && r <= 0x7e || r >= 0xa0 && r <= 0xff {
 				b.WriteByte(byte(r))
