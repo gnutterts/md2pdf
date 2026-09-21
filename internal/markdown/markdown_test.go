@@ -5,6 +5,7 @@ package markdown
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"testing"
 
@@ -122,6 +123,28 @@ func TestParseElements(t *testing.T) {
 				t.Fatal(err)
 			}
 			test.check(t, blocks)
+		})
+	}
+}
+
+func TestParseStrikethrough(t *testing.T) {
+	tests := []struct {
+		name, source string
+		want         []Span
+	}{
+		{"single", "~~weg~~", []Span{{Text: "weg", Strike: true}}},
+		{"surrounded", "a ~~b~~ c", []Span{{Text: "a "}, {Text: "b", Strike: true}, {Text: " c"}}},
+		{"inside bold", "**~~b~~**", []Span{{Text: "b", Bold: true, Strike: true}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			blocks, err := Parse([]byte(test.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(blocks) != 1 || !reflect.DeepEqual(blocks[0].Spans, test.want) {
+				t.Fatalf("spans = %v, want %v", blocks, test.want)
+			}
 		})
 	}
 }

@@ -30,6 +30,9 @@ func (n *fakeCanvas) Style(f string, v, c bool, g float64) {
 	n.style = activeStyle{family: f, size: g, bold: v, italic: c}
 	n.calls = append(n.calls, "style:"+n.style.string())
 }
+func (n *fakeCanvas) Strike(on bool) {
+	n.calls = append(n.calls, fmt.Sprintf("strike:%t", on))
+}
 func (n *fakeCanvas) Text(s string) {
 	n.calls = append(n.calls, "text:"+s+":"+n.style.string())
 }
@@ -258,6 +261,15 @@ func TestTextStyles(t *testing.T) {
 			checkOrder(t, canvas.calls, []string{test.want})
 		})
 	}
+}
+
+func TestDrawStrikethrough(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "weg", Strike: true}}}}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	checkOrder(t, canvas.calls, []string{"strike:true", "text:weg:Helvetica::11", "strike:false"})
 }
 
 func checkOrder(t *testing.T, got, want []string) {

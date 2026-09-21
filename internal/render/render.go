@@ -17,6 +17,8 @@ import (
 type Canvas interface {
 	NewPage()
 	Style(family string, bold, italic bool, size float64)
+	// Strike turns strike-through on or off for the text that follows.
+	Strike(on bool)
 	Text(text string)
 	Link(text, url string)
 	LineBreak(height float64)
@@ -193,6 +195,7 @@ func warn(options Options, message string) {
 
 func spans(canvas Canvas, spans []markdown.Span, base baseStyle) {
 	for _, span := range spans {
+		canvas.Strike(span.Strike)
 		family, size := base.family, base.size
 		if span.Code {
 			family = "Courier"
@@ -205,4 +208,5 @@ func spans(canvas Canvas, spans []markdown.Span, base baseStyle) {
 			canvas.Text(span.Text)
 		}
 	}
+	canvas.Strike(false)
 }

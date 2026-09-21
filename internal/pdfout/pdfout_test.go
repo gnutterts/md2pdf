@@ -95,6 +95,68 @@ func TestCP1252IsInContentStream(t *testing.T) {
 	}
 }
 
+func TestLinkIsBlueAndUnderlined(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "link.pdf")
+	document := New()
+	blocks := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{
+		{Text: "before "},
+		{Text: "site", URL: "https://x.example"},
+		{Text: " after"},
+	}}}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := contentStream(t, content)
+	if !bytes.Contains(stream, []byte("0.000 0.275 0.627 rg")) {
+		t.Fatalf("link color missing in %q", stream)
+	}
+	if !bytes.Contains(stream, []byte("re f")) {
+		t.Fatalf("link underline missing in %q", stream)
+	}
+	if got := bytes.Count(stream, []byte("0.000 0.275 0.627 rg")); got != 1 {
+		t.Fatalf("link color appears %d times, want 1 so text after the link is black again: %q", got, stream)
+	}
+}
+
+func TestStrikethroughDrawsLine(t *testing.T) {
+	tests := []struct {
+		name string
+		span markdown.Span
+		line bool
+	}{
+		{"struck", markdown.Span{Text: "weg", Strike: true}, true},
+		{"plain", markdown.Span{Text: "gewoon"}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "strike.pdf")
+			document := New()
+			blocks := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{test.span}}}
+			if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := document.Write(path); err != nil {
+				t.Fatal(err)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream := contentStream(t, content)
+			if has := bytes.Contains(stream, []byte("re f")); has != test.line {
+				t.Fatalf("strikeout line present = %v, want %v: %q", has, test.line, stream)
+			}
+		})
+	}
+}
+
 func TestLongListItemStaysIndented(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "list.pdf")
 	document := New()

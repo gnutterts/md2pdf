@@ -32,6 +32,7 @@ type Span struct {
 	Bold   bool
 	Italic bool
 	Code   bool
+	Strike bool
 	URL    string
 }
 
@@ -293,18 +294,18 @@ func resolveReferences(b []byte) []byte {
 
 func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Span {
 	var out []Span
-	var loop func(ast.Node, bool, bool, bool, string)
-	appendSpan := func(text string, v, c, co bool, u string) {
+	var loop func(ast.Node, bool, bool, bool, bool, string)
+	appendSpan := func(text string, v, c, co, s bool, u string) {
 		if text == "" {
 			return
 		}
-		if len(out) > 0 && out[len(out)-1].Bold == v && out[len(out)-1].Italic == c && out[len(out)-1].Code == co && out[len(out)-1].URL == u {
+		if len(out) > 0 && out[len(out)-1].Bold == v && out[len(out)-1].Italic == c && out[len(out)-1].Code == co && out[len(out)-1].Strike == s && out[len(out)-1].URL == u {
 			out[len(out)-1].Text += text
 			return
 		}
-		out = append(out, Span{Text: text, Bold: v, Italic: c, Code: co, URL: u})
+		out = append(out, Span{Text: text, Bold: v, Italic: c, Code: co, Strike: s, URL: u})
 	}
-	loop = func(k ast.Node, v, c, co bool, u string) {
+	loop = func(k ast.Node, v, c, co, s bool, u string) {
 		switch x := k.(type) {
 		case *ast.Text:
 			segment := x.Segment.Value(source)
@@ -318,34 +319,38 @@ func spans(n ast.Node, source []byte, bold, italic, code bool, url string) []Spa
 			if x.HardLineBreak() {
 				text += "\n"
 			}
-			appendSpan(text, v, c, co, u)
+			appendSpan(text, v, c, co, s, u)
 		case *ast.String:
-			appendSpan(string(x.Value), v, c, co, u)
+			appendSpan(string(x.Value), v, c, co, s, u)
 		case *ast.CodeSpan:
-			appendSpan(string(x.Text(source)), v, c, true, u)
+			appendSpan(string(x.Text(source)), v, c, true, s, u)
 		case *ast.AutoLink:
 			label := string(x.Label(source))
 			linkURL := string(x.URL(source))
 			if x.AutoLinkType == ast.AutoLinkEmail {
 				linkURL = "mailto:" + label
 			}
-			appendSpan(label, v, c, co, linkURL)
+			appendSpan(label, v, c, co, s, linkURL)
 		case *ast.Emphasis:
 			for q := x.FirstChild(); q != nil; q = q.NextSibling() {
-				loop(q, v || x.Level >= 2, c || x.Level == 1 || x.Level == 3, co, u)
+				loop(q, v || x.Level >= 2, c || x.Level == 1 || x.Level == 3, co, s, u)
 			}
 		case *ast.Link:
 			for q := x.FirstChild(); q != nil; q = q.NextSibling() {
-				loop(q, v, c, co, string(x.Destination))
+				loop(q, v, c, co, s, string(x.Destination))
+			}
+		case *extast.Strikethrough:
+			for q := x.FirstChild(); q != nil; q = q.NextSibling() {
+				loop(q, v, c, co, true, u)
 			}
 		default:
 			for q := k.FirstChild(); q != nil; q = q.NextSibling() {
-				loop(q, v, c, co, u)
+				loop(q, v, c, co, s, u)
 			}
 		}
 	}
 	for kind := n.FirstChild(); kind != nil; kind = kind.NextSibling() {
-		loop(kind, bold, italic, code, url)
+		loop(kind, bold, italic, code, false, url)
 	}
 	return out
 }

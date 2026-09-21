@@ -26,6 +26,18 @@ type Document struct {
 	pdf    *fpdf.Fpdf
 	indent float64
 	images int
+
+	font    fontStyle
+	fontSet bool
+	strike  bool
+}
+
+// fontStyle remembers the last font chosen through Canvas.Style, without
+// strike-through, which Document keeps separately.
+type fontStyle struct {
+	family string
+	style  string
+	size   float64
 }
 
 // New creates an empty A4 document.
@@ -65,10 +77,40 @@ func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 	if italic {
 		style += "I"
 	}
-	v.d.pdf.SetFont(family, style, size)
+	v.d.font = fontStyle{family: family, style: style, size: size}
+	v.d.fontSet = true
+	v.applyFont()
 }
-func (v documentCanvas) Text(s string)       { v.d.pdf.Write(15, text.ToCP1252(s)) }
-func (v documentCanvas) Link(s, url string)  { v.d.pdf.WriteLinkString(15, text.ToCP1252(s), url) }
+func (v documentCanvas) Strike(on bool) {
+	v.d.strike = on
+	v.applyFont()
+}
+func (v documentCanvas) Text(s string) { v.d.pdf.Write(15, text.ToCP1252(s)) }
+func (v documentCanvas) Link(s, url string) {
+	r, g, b := v.d.pdf.GetTextColor()
+	v.d.pdf.SetTextColor(0, 70, 160)
+	if v.d.fontSet {
+		v.d.pdf.SetFont(v.d.font.family, v.styleString()+"U", v.d.font.size)
+	}
+	v.d.pdf.WriteLinkString(15, text.ToCP1252(s), url)
+	if v.d.fontSet {
+		v.applyFont()
+	}
+	v.d.pdf.SetTextColor(r, g, b)
+}
+func (v documentCanvas) styleString() string {
+	style := v.d.font.style
+	if v.d.strike {
+		style += "S"
+	}
+	return style
+}
+func (v documentCanvas) applyFont() {
+	if !v.d.fontSet {
+		return
+	}
+	v.d.pdf.SetFont(v.d.font.family, v.styleString(), v.d.font.size)
+}
 func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.resetX() }
 func (v documentCanvas) Indent(p float64) {
 	v.d.indent += p
