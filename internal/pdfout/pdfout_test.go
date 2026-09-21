@@ -12,10 +12,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
@@ -317,5 +319,88 @@ func TestDiagramTallerThanOnePageIsScaled(t *testing.T) {
 	}
 	if pageCount(content) != 1 {
 		t.Fatalf("diagram spans %d pages, want one", pageCount(content))
+	}
+}
+
+func TestWrapCode(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		max  int
+		want []string
+	}{
+		{"short line unchanged", "abc", 5, []string{"abc"}},
+		{"empty line", "", 5, []string{""}},
+		{"exact max", "abcde", 5, []string{"abcde"}},
+		{"break on space", "aaa bbb ccc", 6, []string{"aaa ", "bbb ", "ccc"}},
+		{"no space in second half hard breaks", "aa bbbbbb", 6, []string{"aa bbb", "bbb"}},
+		{"max zero", "abcdef", 0, []string{"a", "b", "c", "d", "e", "f"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := wrapCode(test.line, test.max)
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("wrapCode(%q, %d) = %q, want %q", test.line, test.max, got, test.want)
+			}
+			limit := test.max
+			if limit < 1 {
+				limit = 1
+			}
+			if strings.Join(got, "") != test.line {
+				t.Fatalf("wrapCode(%q, %d) pieces join to %q", test.line, test.max, strings.Join(got, ""))
+			}
+			for _, piece := range got {
+				if len(piece) > limit {
+					t.Fatalf("wrapCode(%q, %d) piece %q exceeds %d bytes", test.line, test.max, piece, limit)
+				}
+			}
+		})
+	}
+}
+
+func TestCodeBlockLongLineIsNotTruncated(t *testing.T) {
+	document := New()
+	var lineBuilder strings.Builder
+	for i := 0; lineBuilder.Len() < 300; i++ {
+		lineBuilder.WriteString(strconv.Itoa(i))
+	}
+	line := lineBuilder.String()[:300]
+
+	blocks := []markdown.Block{{Kind: markdown.CodeBlock, Lines: []string{line}}}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "wrapped.pdf")
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := contentStream(t, content)
+	shown := regexp.MustCompile(`\(([0-9]+)\) ?Tj`).FindAllSubmatch(stream, -1)
+	if len(shown) < 2 {
+		t.Fatalf("want the line wrapped over several rows, got %d", len(shown))
+	}
+	var joined []byte
+	for _, match := range shown {
+		joined = append(joined, match[1]...)
+	}
+	if string(joined) != line {
+		t.Fatalf("drawn text differs from the source line:\n got %s\nwant %s", joined, line)
+	}
+}
+
+func TestCodeBlockLongLineDrawsQuickly(t *testing.T) {
+	document := New()
+	line := strings.Repeat("x", 200000)
+	blocks := []markdown.Block{{Kind: markdown.CodeBlock, Lines: []string{line}}}
+	start := time.Now()
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("drawing a 200000 character code line took %v, want at most 2s", elapsed)
 	}
 }

@@ -78,14 +78,38 @@ func (v documentCanvas) Indent(p float64) {
 func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) }
 
 func (v documentCanvas) CodeBlock(lines []string) {
+	limit := int(v.contentWidth() / v.d.pdf.GetStringWidth("M"))
 	for _, line := range lines {
 		line = text.ToCP1252(line)
-		for len(line) > 0 && v.d.pdf.GetStringWidth(line) > v.contentWidth() {
-			line = line[:len(line)-1]
+		for _, piece := range wrapCode(line, limit) {
+			v.d.pdf.CellFormat(v.contentWidth(), 12, piece, "", 0, "", false, 0, "")
+			v.LineBreak(12)
 		}
-		v.d.pdf.CellFormat(v.contentWidth(), 12, line, "", 0, "", false, 0, "")
-		v.LineBreak(12)
 	}
+}
+
+// wrapCode splits a code line into pieces of at most limit bytes. It prefers to
+// break right after the last space within limit, but only when that space falls
+// in the second half of limit; otherwise it breaks hard at limit. The line must
+// already be cp1252, where every byte is one character.
+func wrapCode(line string, limit int) []string {
+	if limit < 1 {
+		limit = 1
+	}
+	if line == "" {
+		return []string{""}
+	}
+	var pieces []string
+	for len(line) > limit {
+		cut := limit
+		if space := strings.LastIndexByte(line[:limit], ' '); space >= 0 && space*2 >= limit {
+			cut = space + 1
+		}
+		pieces = append(pieces, line[:cut])
+		line = line[cut:]
+	}
+	pieces = append(pieces, line)
+	return pieces
 }
 
 // Diagram registers and draws a PNG without a temporary file.
