@@ -95,3 +95,8 @@ starts a new line.
 
 > - A list inside a quote
 > - A second item inside the quote
+
+- A list directly before a quote
+- A second item
+
+> A quote right after the list.

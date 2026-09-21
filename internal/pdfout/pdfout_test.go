@@ -72,6 +72,91 @@ func TestWritePDF(t *testing.T) {
 	}
 }
 
+func TestTaskCheckboxWritesBox(t *testing.T) {
+	tests := []struct {
+		name      string
+		checked   bool
+		wantLines int
+	}{
+		{"open", false, 0},
+		{"done", true, 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "checkbox.pdf")
+			document := New()
+			document.Canvas().Checkbox("", test.checked)
+			if err := document.Write(path); err != nil {
+				t.Fatal(err)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream := contentStream(t, content)
+			if !bytes.Contains(stream, []byte(" re S")) {
+				t.Fatalf("checkbox has no rect operator in %q", stream)
+			}
+			if got := bytes.Count(stream, []byte(" l S")); got != test.wantLines {
+				t.Fatalf("checkbox has %d line segments, want %d: %q", got, test.wantLines, stream)
+			}
+		})
+	}
+}
+
+func TestQuoteDrawsLineAtSixty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "quote.pdf")
+	document := New()
+	canvas := document.Canvas()
+	canvas.Quote(1, func() {
+		canvas.LineBreak(15)
+	})
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := contentStream(t, content)
+	line := regexp.MustCompile(`60\.00 [0-9]+\.[0-9]+ m 60\.00 [0-9]+\.[0-9]+ l S`)
+	if !line.Match(stream) {
+		t.Fatalf("quote has no vertical line at x = 60: %q", stream)
+	}
+}
+
+func TestQuoteLineSpansPageBreak(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "quote-pages.pdf")
+	document := New()
+	blocks := make([]markdown.Block, 40)
+	for i := range blocks {
+		blocks[i] = markdown.Block{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "quote"}}}
+	}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := pageCount(content); count != 2 {
+		t.Fatalf("quote spans %d pages, want 2", count)
+	}
+	streams := contentStreams(t, content)
+	if len(streams) != 2 {
+		t.Fatalf("quote has %d content streams, want 2", len(streams))
+	}
+	line := regexp.MustCompile(`60\.00 [0-9]+\.[0-9]+ m 60\.00 [0-9]+\.[0-9]+ l S`)
+	for i, stream := range streams {
+		if !line.Match(stream) {
+			t.Fatalf("page %d has no quote line: %q", i+1, stream)
+		}
+	}
+}
+
 func TestCP1252IsInContentStream(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tekens.pdf")
 	document := New()
@@ -545,5 +630,32 @@ func TestCodeBlockLongLineDrawsQuickly(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("drawing a 200000 character code line took %v, want at most 2s", elapsed)
+	}
+}
+
+func TestCheckboxSitsOnItsTextLine(t *testing.T) {
+	document := New()
+	canvas := document.Canvas().(documentCanvas)
+	canvas.Indent(14)
+	lineTop := document.pdf.GetY()
+	canvas.Checkbox("", true)
+	canvas.Indent(-14)
+	path := filepath.Join(t.TempDir(), "box.pdf")
+	if err := document.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`([0-9.]+) ([0-9.]+) ([0-9.]+) (-[0-9.]+) re`).FindSubmatch(contentStream(t, content))
+	if match == nil {
+		t.Fatal("no rectangle for the checkbox")
+	}
+	_, pageHeight := document.pdf.GetPageSize()
+	pdfY, _ := strconv.ParseFloat(string(match[2]), 64)
+	boxTop := pageHeight - pdfY
+	if boxTop < lineTop || boxTop+8 > lineTop+15 {
+		t.Fatalf("checkbox spans %.2f to %.2f, want inside the line %.2f to %.2f", boxTop, boxTop+8, lineTop, lineTop+15)
 	}
 }

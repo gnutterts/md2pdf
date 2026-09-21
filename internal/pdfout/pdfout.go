@@ -132,6 +132,74 @@ func (v documentCanvas) Marker(s string) {
 	}
 }
 
+// Checkbox draws a task checkbox in the gutter before the current left margin.
+func (v documentCanvas) Checkbox(prefix string, checked bool) {
+	const gutter = 14.0
+	const boxSize = 8.0
+	const boxGap = 3.0
+	left := margin + v.d.indent
+	pdf := v.d.pdf
+	pdf.SetX(left - gutter)
+	if prefix != "" {
+		pdf.Write(15, text.ToCP1252(prefix))
+	}
+	x := pdf.GetX()
+	// GetY is the top of the 15 point text line; centre the box on it.
+	top := pdf.GetY() + (15-boxSize)/2
+	pdf.Rect(x, top, boxSize, boxSize, "D")
+	if checked {
+		pdf.Line(x+1.5, top+4.5, x+3.5, top+6.5)
+		pdf.Line(x+3.5, top+6.5, x+6.5, top+2.5)
+	}
+	pdf.SetX(x + boxSize + boxGap)
+	if pdf.GetX() < left {
+		pdf.SetX(left)
+	}
+}
+
+// Quote draws the blocks that draw() produces with a vertical bar in the
+// gutter of every quote level, also across page breaks.
+func (v documentCanvas) Quote(levels int, draw func()) {
+	if levels <= 0 {
+		draw()
+		return
+	}
+	pdf := v.d.pdf
+	drawRed, drawGreen, drawBlue := pdf.GetDrawColor()
+	lineWidth := pdf.GetLineWidth()
+	startPage := pdf.PageNo()
+	startY := pdf.GetY()
+
+	draw()
+
+	endPage := pdf.PageNo()
+	endY := pdf.GetY()
+	_, pageHeight := pdf.GetPageSize()
+	_, top, _, bottom := pdf.GetMargins()
+
+	for level := 1; level <= levels; level++ {
+		x := margin + 14*float64(level-1) + 4
+		for page := startPage; page <= endPage; page++ {
+			pdf.SetPage(page)
+			pdf.SetDrawColor(180, 180, 180)
+			pdf.SetLineWidth(1.5)
+			y1 := startY
+			if page > startPage {
+				y1 = top
+			}
+			y2 := endY
+			if page < endPage {
+				y2 = pageHeight - bottom
+			}
+			pdf.Line(x, y1, x, y2)
+		}
+	}
+
+	pdf.SetPage(endPage)
+	pdf.SetDrawColor(drawRed, drawGreen, drawBlue)
+	pdf.SetLineWidth(lineWidth)
+}
+
 func (v documentCanvas) CodeBlock(lines []string) {
 	limit := int(v.contentWidth() / v.d.pdf.GetStringWidth("M"))
 	for _, line := range lines {

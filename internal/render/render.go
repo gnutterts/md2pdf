@@ -27,6 +27,14 @@ type Canvas interface {
 	// margin, and leaves x at the left margin or just after the marker if
 	// the marker is wider than the gutter.
 	Marker(text string)
+	// Checkbox draws a task checkbox in the gutter before the current left
+	// margin. prefix, when non-empty, is drawn before the box. checked adds
+	// a check mark inside the box. It leaves x at the left margin or just
+	// after the box if the box is wider than the gutter.
+	Checkbox(prefix string, checked bool)
+	// Quote draws the blocks that draw() produces with a vertical bar in the
+	// gutter of every quote level, also across page breaks.
+	Quote(levels int, draw func())
 	// HangingIndent aligns wrapped lines with the current column
 	// instead of the indentation of the block, so that the text of a
 	// list item continues below itself and not below the bullet.
@@ -64,96 +72,122 @@ type Options struct {
 // Draw draws blocks in their original order.
 func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 	first := true
-	for _, block := range blocks {
-		switch block.Kind {
-		case markdown.Heading:
-			if !first {
-				canvas.LineBreak(12)
+	for i := 0; i < len(blocks); {
+		block := blocks[i]
+		if block.Quote > 0 {
+			level := block.Quote
+			j := i
+			for j < len(blocks) && blocks[j].Quote == level {
+				j++
 			}
-			base := baseStyle{family: "Helvetica", size: 11, bold: true}
-			if block.Level == 1 {
-				base.size = 20
-			}
-			if block.Level == 2 {
-				base.size = 16
-			}
-			if block.Level == 3 {
-				base.size = 13
-			}
-			indent := continuationIndent(block)
-			canvas.Indent(indent)
-			canvas.Style(base.family, base.bold, base.italic, base.size)
-			spans(canvas, block.Spans, base)
-			canvas.LineBreak(heightFor(base.size))
-			canvas.Indent(-indent)
-			canvas.LineBreak(6)
-		case markdown.Paragraph:
-			base := baseStyle{family: "Helvetica", size: 11, italic: block.Quote > 0}
-			indent := continuationIndent(block)
-			canvas.Indent(indent)
-			canvas.Style(base.family, base.bold, base.italic, base.size)
-			spans(canvas, block.Spans, base)
-			canvas.LineBreak(heightFor(base.size))
-			canvas.Indent(-indent)
-			canvas.LineBreak(6)
-		case markdown.ListItem:
-			indent := listTextIndent(block)
-			canvas.Indent(indent)
-			base := baseStyle{family: "Helvetica", size: 11, italic: block.Quote > 0}
-			canvas.Style(base.family, base.bold, base.italic, base.size)
-			if !block.Continued {
+			run := blocks[i:j]
+			canvas.Quote(level, func() {
+				for k, b := range run {
+					drawBlock(canvas, b, options, &first, listNeedsSpace(blocks, i+k))
+				}
+			})
+			i = j
+			continue
+		}
+		drawBlock(canvas, block, options, &first, listNeedsSpace(blocks, i))
+		i++
+	}
+	return canvas.Err()
+}
+
+// drawBlock draws one block and marks it as handled.
+func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool, spaceAfter bool) {
+	switch block.Kind {
+	case markdown.Heading:
+		if !*first {
+			canvas.LineBreak(12)
+		}
+		base := baseStyle{family: "Helvetica", size: 11, bold: true}
+		if block.Level == 1 {
+			base.size = 20
+		}
+		if block.Level == 2 {
+			base.size = 16
+		}
+		if block.Level == 3 {
+			base.size = 13
+		}
+		indent := continuationIndent(block)
+		canvas.Indent(indent)
+		canvas.Style(base.family, base.bold, base.italic, base.size)
+		spans(canvas, block.Spans, base)
+		canvas.LineBreak(heightFor(base.size))
+		canvas.Indent(-indent)
+		canvas.LineBreak(6)
+	case markdown.Paragraph:
+		base := baseStyle{family: "Helvetica", size: 11, italic: block.Quote > 0}
+		indent := continuationIndent(block)
+		canvas.Indent(indent)
+		canvas.Style(base.family, base.bold, base.italic, base.size)
+		spans(canvas, block.Spans, base)
+		canvas.LineBreak(heightFor(base.size))
+		canvas.Indent(-indent)
+		canvas.LineBreak(6)
+	case markdown.ListItem:
+		indent := listTextIndent(block)
+		canvas.Indent(indent)
+		base := baseStyle{family: "Helvetica", size: 11, italic: block.Quote > 0}
+		canvas.Style(base.family, base.bold, base.italic, base.size)
+		if !block.Continued {
+			switch block.Task {
+			case markdown.TaskOpen:
+				canvas.Checkbox(taskPrefix(block), false)
+			case markdown.TaskDone:
+				canvas.Checkbox(taskPrefix(block), true)
+			default:
 				marker := "• "
 				if block.Ordered {
 					marker = strconv.Itoa(block.Number) + ". "
 				}
-				switch block.Task {
-				case markdown.TaskOpen:
-					marker = taskMarker(block, "[ ] ")
-				case markdown.TaskDone:
-					marker = taskMarker(block, "[x] ")
-				}
 				canvas.Marker(marker)
-				canvas.HangingIndent()
 			}
-			spans(canvas, block.Spans, base)
-			canvas.LineBreak(heightFor(base.size))
-			canvas.Indent(-indent)
-		case markdown.CodeBlock:
-			if block.Language == "mermaid" && options.Mermaid.Available() {
-				indent := continuationIndent(block)
-				canvas.Indent(indent)
-				png, err := options.Mermaid.ToPNG(strings.Join(block.Lines, "\n"))
-				if err == nil {
-					err = canvas.Diagram(png)
-				}
-				if err == nil {
-					canvas.LineBreak(6)
-					canvas.Indent(-indent)
-					break
-				}
-				canvas.Indent(-indent)
-				warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
-			}
-			indent := continuationIndent(block)
-			canvas.Indent(indent)
-			drawCodeBlock(canvas, block.Lines)
-			canvas.Indent(-indent)
-		case markdown.Rule:
-			indent := continuationIndent(block)
-			canvas.Indent(indent)
-			canvas.Rule()
-			canvas.Indent(-indent)
-			canvas.LineBreak(6)
-		case markdown.Table:
-			indent := continuationIndent(block)
-			canvas.Indent(indent)
-			canvas.Table(block.Rows)
-			canvas.Indent(-indent)
+			canvas.HangingIndent()
+		}
+		spans(canvas, block.Spans, base)
+		canvas.LineBreak(heightFor(base.size))
+		canvas.Indent(-indent)
+		if spaceAfter {
 			canvas.LineBreak(6)
 		}
-		first = false
+	case markdown.CodeBlock:
+		if block.Language == "mermaid" && options.Mermaid.Available() {
+			indent := continuationIndent(block)
+			canvas.Indent(indent)
+			png, err := options.Mermaid.ToPNG(strings.Join(block.Lines, "\n"))
+			if err == nil {
+				err = canvas.Diagram(png)
+			}
+			if err == nil {
+				canvas.LineBreak(6)
+				canvas.Indent(-indent)
+				break
+			}
+			canvas.Indent(-indent)
+			warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
+		}
+		indent := continuationIndent(block)
+		canvas.Indent(indent)
+		drawCodeBlock(canvas, block.Lines)
+		canvas.Indent(-indent)
+	case markdown.Rule:
+		indent := continuationIndent(block)
+		canvas.Indent(indent)
+		canvas.Rule()
+		canvas.Indent(-indent)
+		canvas.LineBreak(6)
+	case markdown.Table:
+		indent := continuationIndent(block)
+		canvas.Indent(indent)
+		canvas.Table(block.Rows)
+		canvas.Indent(-indent)
+		canvas.LineBreak(6)
 	}
-	return canvas.Err()
+	*first = false
 }
 
 // listTextIndent is the distance from the left margin to the text of a list item.
@@ -170,13 +204,27 @@ func continuationIndent(block markdown.Block) float64 {
 	return indent
 }
 
-// taskMarker keeps the number of an ordered task item and replaces the bullet
-// of an unordered one.
-func taskMarker(block markdown.Block, box string) string {
+// taskPrefix is the text before the checkbox of an ordered task item.
+func taskPrefix(block markdown.Block) string {
 	if block.Ordered {
-		return strconv.Itoa(block.Number) + ". " + box
+		return strconv.Itoa(block.Number) + ". "
 	}
-	return box
+	return ""
+}
+
+// listNeedsSpace reports whether a list item must be followed by extra space.
+func listNeedsSpace(blocks []markdown.Block, i int) bool {
+	if blocks[i].Kind != markdown.ListItem {
+		return false
+	}
+	if i+1 >= len(blocks) {
+		return true
+	}
+	next := blocks[i+1]
+	if next.Quote != blocks[i].Quote {
+		return true
+	}
+	return next.Kind != markdown.ListItem && !next.InItem
 }
 
 func drawCodeBlock(canvas Canvas, lines []string) {

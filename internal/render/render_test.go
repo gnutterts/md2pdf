@@ -46,6 +46,14 @@ func (n *fakeCanvas) Indent(p float64) { n.calls = append(n.calls, "indent") }
 func (n *fakeCanvas) Marker(s string) {
 	n.calls = append(n.calls, "marker:"+s+":"+n.style.string())
 }
+func (n *fakeCanvas) Checkbox(prefix string, checked bool) {
+	n.calls = append(n.calls, fmt.Sprintf("checkbox:%s:%t:%s", prefix, checked, n.style.string()))
+}
+func (n *fakeCanvas) Quote(levels int, draw func()) {
+	n.calls = append(n.calls, fmt.Sprintf("quote-start:%d", levels))
+	draw()
+	n.calls = append(n.calls, fmt.Sprintf("quote-end:%d", levels))
+}
 func (n *fakeCanvas) HangingIndent() { n.calls = append(n.calls, "hanging") }
 func (n *fakeCanvas) CodeBlock(r []string) {
 	n.calls = append(n.calls, "code:"+strings.Join(r, ","))
@@ -142,12 +150,12 @@ func TestDrawOrderAndStyles(t *testing.T) {
 
 func TestDrawTaskItems(t *testing.T) {
 	tests := []struct {
-		name string
-		task markdown.TaskState
-		want string
+		name    string
+		task    markdown.TaskState
+		checked bool
 	}{
-		{"open", markdown.TaskOpen, "marker:[ ] :Helvetica::11"},
-		{"done", markdown.TaskDone, "marker:[x] :Helvetica::11"},
+		{"open", markdown.TaskOpen, false},
+		{"done", markdown.TaskDone, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -156,9 +164,11 @@ func TestDrawTaskItems(t *testing.T) {
 			if err := Draw(blocks, canvas, Options{}); err != nil {
 				t.Fatal(err)
 			}
-			checkOrder(t, canvas.calls, []string{test.want, "text:doe:Helvetica::11"})
-			if contains(canvas.calls, "marker:• :Helvetica::11") {
-				t.Fatalf("task item drew a bullet: %q", canvas.calls)
+			checkOrder(t, canvas.calls, []string{fmt.Sprintf("checkbox::%t:Helvetica::11", test.checked), "text:doe:Helvetica::11"})
+			for _, call := range canvas.calls {
+				if strings.HasPrefix(call, "marker:") {
+					t.Fatalf("task item drew a marker: %q", canvas.calls)
+				}
 			}
 		})
 	}
@@ -170,7 +180,72 @@ func TestDrawOrderedTaskKeepsNumber(t *testing.T) {
 	if err := Draw(blocks, canvas, Options{}); err != nil {
 		t.Fatal(err)
 	}
-	checkOrder(t, canvas.calls, []string{"marker:3. [x] :Helvetica::11", "text:doe:Helvetica::11"})
+	checkOrder(t, canvas.calls, []string{"checkbox:3. :true:Helvetica::11", "text:doe:Helvetica::11"})
+}
+
+func TestDrawQuoteBlocksShareOneQuoteCall(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "one"}}},
+		{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "two"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	checkOrder(t, canvas.calls, []string{
+		"quote-start:1",
+		"text:one:Helvetica:I:11",
+		"text:two:Helvetica:I:11",
+		"quote-end:1",
+	})
+	quoteCalls := 0
+	for _, call := range canvas.calls {
+		if call == "quote-start:1" {
+			quoteCalls++
+		}
+	}
+	if quoteCalls != 1 {
+		t.Fatalf("two quote paragraphs used %d Quote calls, want 1: %q", quoteCalls, canvas.calls)
+	}
+}
+
+func TestDrawListItemSpacing(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Spans: []markdown.Span{{Text: "one"}}},
+		{Kind: markdown.ListItem, Spans: []markdown.Span{{Text: "two"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := canvas.calls[len(canvas.calls)-1]; got != "end:6" {
+		t.Fatalf("last list item is not followed by LineBreak(6): %q", canvas.calls)
+	}
+	spacing := 0
+	for _, call := range canvas.calls {
+		if call == "end:6" {
+			spacing++
+		}
+	}
+	if spacing != 1 {
+		t.Fatalf("two list items have %d LineBreak(6) calls, want only the final one: %q", spacing, canvas.calls)
+	}
+}
+
+func TestDrawListThenParagraphGetsSpacing(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Spans: []markdown.Span{{Text: "item"}}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	checkOrder(t, canvas.calls, []string{
+		"text:item:Helvetica::11",
+		"end:6",
+		"text:after:Helvetica::11",
+	})
 }
 
 func TestDrawContinuedListItemSkipsMarker(t *testing.T) {
@@ -288,4 +363,16 @@ func checkOrder(t *testing.T, got, want []string) {
 		}
 		start = found + 1
 	}
+}
+
+func TestDrawListSpaceWhenQuoteLevelChanges(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Quote: 1, Spans: []markdown.Span{{Text: "quoted"}}},
+		{Kind: markdown.ListItem, Spans: []markdown.Span{{Text: "plain"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	checkOrder(t, canvas.calls, []string{"text:quoted:Helvetica:I:11", "end:6", "text:plain:Helvetica::11"})
 }
