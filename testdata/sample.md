@@ -1,3 +1,8 @@
+---
+title: "Sample document"
+author: "md2pdf"
+---
+
 # Sample document
 
 A short document that exercises every element `md2pdf` knows how to draw, so the renderer can be

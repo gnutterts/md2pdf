@@ -82,6 +82,7 @@ type Block struct {
 
 // Parse reads Markdown into a flat document structure.
 func Parse(source []byte) ([]Block, error) {
+	_, source = SplitFrontMatter(source)
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
 	doc := md.Parser().Parse(text.NewReader(source))
 	var blocks []Block
