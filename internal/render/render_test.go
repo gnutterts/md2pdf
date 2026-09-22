@@ -248,6 +248,22 @@ func TestDrawListThenParagraphGetsSpacing(t *testing.T) {
 	})
 }
 
+func TestDrawTwoAdjacentListsOfDifferentKindGetSpacing(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.ListItem, Ordered: false, Spans: []markdown.Span{{Text: "bullet"}}},
+		{Kind: markdown.ListItem, Ordered: true, Number: 1, Spans: []markdown.Span{{Text: "number"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	checkOrder(t, canvas.calls, []string{
+		"text:bullet:Helvetica::11",
+		"end:6",
+		"text:number:Helvetica::11",
+	})
+}
+
 func TestDrawContinuedListItemSkipsMarker(t *testing.T) {
 	canvas := &fakeCanvas{}
 	blocks := []markdown.Block{{Kind: markdown.ListItem, Depth: 0, Continued: true, Spans: []markdown.Span{{Text: "vervolg"}}}}

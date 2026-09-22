@@ -112,3 +112,8 @@ A line break inside a paragraph: Line one<br>line two<br/>line three.
 - A second item
 
 > A quote right after the list.
+
+- A bulleted list
+- with two items
+1. immediately followed by a numbered list
+2. of a different kind

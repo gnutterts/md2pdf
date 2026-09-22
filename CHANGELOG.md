@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-09-22
+
+### Fixed
+
+- Two adjacent lists of a different kind (a bulleted list immediately followed by a numbered one,
+  or the reverse, with no blank paragraph between them) were drawn with no space between them and
+  read as a single list.
+
 ## 0.2.0 — 2026-09-21
 
 This release stops `md2pdf` from silently dropping or garbling content.
