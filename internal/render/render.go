@@ -224,7 +224,14 @@ func listNeedsSpace(blocks []markdown.Block, i int) bool {
 	if next.Quote != blocks[i].Quote {
 		return true
 	}
-	return next.Kind != markdown.ListItem && !next.InItem
+	if next.Kind != markdown.ListItem {
+		return !next.InItem
+	}
+	// A marker item directly followed by another marker item of a
+	// different kind (bulleted vs numbered) at the same depth starts a
+	// separate list, which gets the same space a paragraph would get.
+	return !blocks[i].Continued && !next.Continued && !next.InItem &&
+		next.Depth == blocks[i].Depth && next.Ordered != blocks[i].Ordered
 }
 
 func drawCodeBlock(canvas Canvas, lines []string) {
