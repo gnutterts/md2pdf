@@ -38,6 +38,8 @@ type Plan struct {
 	// Title and Author come from --title and --author; empty means unset.
 	Title  string
 	Author string
+	// NoPageNumbers is set by --no-page-numbers; by default every page is numbered.
+	NoPageNumbers bool
 	// Creator names the program in the PDF; the entry point sets it.
 	Creator string
 }
@@ -81,7 +83,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--no-page-numbers] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -112,6 +114,7 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 		return Plan{}, err
 	}
 	plan.Title, plan.Author = f.title, f.author
+	plan.NoPageNumbers = f.noNumbers
 	return plan, nil
 }
 
@@ -122,6 +125,7 @@ type flags struct {
 	mermaid   string
 	title     string
 	author    string
+	noNumbers bool
 	positions []string
 }
 
@@ -158,6 +162,8 @@ func parseArgs(args []string) (flags, error) {
 			}
 			i++
 			f.mermaid = args[i]
+		case "--no-page-numbers":
+			f.noNumbers = true
 		case "--title":
 			f.title, err = value(&i, "--title")
 		case "--author":

@@ -63,6 +63,24 @@ func (d *Document) SetInfo(title, author, creator string) {
 	}
 }
 
+// SetPageNumbers puts "n / N" centred in grey below the text of every page.
+func (d *Document) SetPageNumbers(on bool) {
+	if !on {
+		d.pdf.SetFooterFunc(nil)
+		return
+	}
+	d.pdf.AliasNbPages("")
+	// fpdf saves and restores the font (with underline), the colours and the
+	// line width around the footer, so nothing is restored here.
+	d.pdf.SetFooterFunc(func() {
+		pdf := d.pdf
+		pdf.SetXY(margin, -margin/2-4)
+		pdf.SetFont("Helvetica", "", 9)
+		pdf.SetTextColor(128, 128, 128)
+		pdf.CellFormat(width-2*margin, 10, fmt.Sprintf("%d / {nb}", pdf.PageNo()), "", 0, "C", false, 0, "")
+	})
+}
+
 // Canvas returns the drawing surface of the document.
 func (d *Document) Canvas() render.Canvas { return documentCanvas{d: d} }
 
