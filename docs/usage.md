@@ -59,6 +59,6 @@ the batch stops at the first failure.
 ## Mermaid
 
 Mermaid blocks are rendered with `mmdc` by default. Select another renderer with `--mermaid <path>` or
-`MD2PDF_MERMAID`; `off` disables rendering. A diagram whose image is larger than 64 MB is refused like a failed one. If the renderer is missing or fails, a warning is written to
+`MD2PDF_MERMAID`; `off` disables rendering. A diagram whose image is larger than 64 MiB is refused like a failed one. If the renderer is missing or fails, a warning is written to
 stderr, the diagram remains visible as a code block, and the exit code stays 0. With `--strict` the warning
 is an error instead, and no PDF is written.

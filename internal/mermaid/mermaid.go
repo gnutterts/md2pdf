@@ -156,7 +156,7 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	}
 
 	if info, err := os.Stat(output); err == nil && info.Size() > MaxPNGSize {
-		return nil, fmt.Errorf("mermaid output is too large (%d MB, limit %d MB)", info.Size()>>20, int64(MaxPNGSize)>>20)
+		return nil, fmt.Errorf("mermaid output is too large (%.1f MiB, limit %d MiB)", float64(info.Size())/(1<<20), int64(MaxPNGSize)>>20)
 	}
 	png, err := os.ReadFile(output)
 	if err != nil {
