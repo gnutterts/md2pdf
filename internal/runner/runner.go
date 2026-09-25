@@ -52,7 +52,7 @@ func renderTask(plan cli.Plan, task cli.Task, options render.Options) error {
 	if err != nil {
 		return err
 	}
-	document := pdfout.New()
+	document := pdfout.NewWithLayout(pdfout.Layout{Paper: plan.Paper, Margin: plan.Margin})
 	document.SetInfo(documentTitle(plan, task, source), documentAuthor(plan, source), plan.Creator)
 	document.SetPageNumbers(!plan.NoPageNumbers)
 	if err := render.Draw(source.blocks, document.Canvas(), options); err != nil {
@@ -65,7 +65,7 @@ func renderTask(plan cli.Plan, task cli.Task, options render.Options) error {
 }
 
 func renderMerged(plan cli.Plan, task cli.Task, options render.Options) error {
-	document := pdfout.New()
+	document := pdfout.NewWithLayout(pdfout.Layout{Paper: plan.Paper, Margin: plan.Margin})
 	canvas := document.Canvas()
 	for i, path := range task.Sources {
 		source, err := readSource(path)

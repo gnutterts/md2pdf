@@ -12,6 +12,8 @@ md2pdf [flags] <file.md | directory>
 | `--title <text>` | Document title; by default the `title` in the front matter, else the first level 1 heading, else the file name (the directory name when a directory is merged) |
 | `--author <text>` | Document author; by default the `author` in the front matter |
 | `--no-page-numbers` | Leave the page numbers out |
+| `--paper <size>` | Paper size: `a4` (default), `a5`, `a3`, `letter` or `legal`, portrait |
+| `--margin <length>` | Margin on every side, such as `20mm`, `0.75in` or `56pt`; a bare number is in points. Default `56pt`; at most a quarter of the shortest side of the paper |
 | `--version` | Print the version |
 | `-h`, `--help` | Print usage |
 

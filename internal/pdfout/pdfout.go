@@ -18,14 +18,35 @@ import (
 	"github.com/go-pdf/fpdf"
 )
 
-const (
-	margin = 56.0
-	width  = 595.28
-)
+// DefaultMargin is the margin on every side in points.
+const DefaultMargin = 56.0
+
+// Layout is the paper size and margin of a document.
+type Layout struct {
+	Paper  string  // a3, a4, a5, letter or legal; empty means a4
+	Margin float64 // points on every side; 0 means DefaultMargin
+}
+
+// paperSizes are the page sizes in points that fpdf knows, portrait.
+var paperSizes = map[string][2]float64{
+	"a3":     {841.89, 1190.55},
+	"a4":     {595.28, 841.89},
+	"a5":     {419.53, 595.28},
+	"letter": {612, 792},
+	"legal":  {612, 1008},
+}
+
+// PaperSize returns the portrait size in points of a paper name, ignoring case.
+func PaperSize(name string) (width, height float64, ok bool) {
+	size, ok := paperSizes[strings.ToLower(name)]
+	return size[0], size[1], ok
+}
 
 // Document is an A4 PDF with a drawing surface.
 type Document struct {
 	pdf    *fpdf.Fpdf
+	margin float64
+	width  float64 // page width in points
 	indent float64
 	images int
 
@@ -46,13 +67,25 @@ type fontStyle struct {
 	size   float64
 }
 
-// New creates an empty A4 document.
-func New() *Document {
-	pdf := fpdf.New("P", "pt", "A4", "")
+// New creates an empty A4 document with the default margin.
+func New() *Document { return NewWithLayout(Layout{}) }
+
+// NewWithLayout creates an empty document with the given paper size and margin.
+func NewWithLayout(layout Layout) *Document {
+	paper := strings.ToLower(layout.Paper)
+	if _, _, ok := PaperSize(paper); !ok {
+		paper = "a4"
+	}
+	margin := layout.Margin
+	if margin <= 0 {
+		margin = DefaultMargin
+	}
+	pdf := fpdf.New("P", "pt", paper, "")
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
-	return &Document{pdf: pdf}
+	width, _ := pdf.GetPageSize()
+	return &Document{pdf: pdf, margin: margin, width: width}
 }
 
 // SetInfo sets the document information; empty values are left unset.
@@ -79,10 +112,10 @@ func (d *Document) SetPageNumbers(on bool) {
 	// line width around the footer, so nothing is restored here.
 	d.pdf.SetFooterFunc(func() {
 		pdf := d.pdf
-		pdf.SetXY(margin, -margin/2-4)
+		pdf.SetXY(d.margin, -d.margin/2-4)
 		pdf.SetFont("Helvetica", "", 9)
 		pdf.SetTextColor(128, 128, 128)
-		pdf.CellFormat(width-2*margin, 10, fmt.Sprintf("%d / {nb}", pdf.PageNo()), "", 0, "C", false, 0, "")
+		pdf.CellFormat(d.width-2*d.margin, 10, fmt.Sprintf("%d / {nb}", pdf.PageNo()), "", 0, "C", false, 0, "")
 	})
 }
 
@@ -187,7 +220,7 @@ func (v documentCanvas) applyFont() {
 func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.resetX() }
 func (v documentCanvas) Indent(p float64) {
 	v.d.indent += p
-	v.d.pdf.SetLeftMargin(margin + v.d.indent)
+	v.d.pdf.SetLeftMargin(v.d.margin + v.d.indent)
 	v.resetX()
 }
 func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) }
@@ -197,7 +230,7 @@ func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) 
 // wider than the gutter.
 func (v documentCanvas) Marker(s string) {
 	const gutter = 14.0
-	left := margin + v.d.indent
+	left := v.d.margin + v.d.indent
 	v.d.pdf.SetX(left - gutter)
 	v.d.pdf.Write(15, text.ToCP1252(s))
 	if v.d.pdf.GetX() < left {
@@ -210,7 +243,7 @@ func (v documentCanvas) Checkbox(prefix string, checked bool) {
 	const gutter = 14.0
 	const boxSize = 8.0
 	const boxGap = 3.0
-	left := margin + v.d.indent
+	left := v.d.margin + v.d.indent
 	pdf := v.d.pdf
 	pdf.SetX(left - gutter)
 	if prefix != "" {
@@ -251,7 +284,7 @@ func (v documentCanvas) Quote(levels int, draw func()) {
 	_, top, _, bottom := pdf.GetMargins()
 
 	for level := 1; level <= levels; level++ {
-		x := margin + 14*float64(level-1) + 4
+		x := v.d.margin + 14*float64(level-1) + 4
 		for page := startPage; page <= endPage; page++ {
 			pdf.SetPage(page)
 			pdf.SetDrawColor(180, 180, 180)
@@ -626,7 +659,7 @@ func (v documentCanvas) rowFits(height float64) bool {
 // drawRow draws one row at the current position.
 func (v documentCanvas) drawRow(row markdown.Row, widths []float64) {
 	height := v.rowHeight(row, widths)
-	x := margin + v.d.indent
+	x := v.d.margin + v.d.indent
 	y := v.d.pdf.GetY()
 	for column, cell := range row.Cells {
 		if column >= len(widths) {
@@ -635,7 +668,7 @@ func (v documentCanvas) drawRow(row markdown.Row, widths []float64) {
 		v.drawCell(cell, row.Header, x, y, widths[column], height)
 		x += widths[column]
 	}
-	v.d.pdf.SetXY(margin+v.d.indent, y+height)
+	v.d.pdf.SetXY(v.d.margin+v.d.indent, y+height)
 }
 
 // drawCell draws the background, border, and text of one cell.
@@ -689,8 +722,8 @@ func alignment(u markdown.Alignment) string {
 }
 func (v documentCanvas) Rule() {
 	y := v.d.pdf.GetY() + 3
-	v.d.pdf.Line(margin+v.d.indent, y, width-margin, y)
+	v.d.pdf.Line(v.d.margin+v.d.indent, y, v.d.width-v.d.margin, y)
 }
 func (v documentCanvas) Err() error            { return v.d.pdf.Error() }
-func (v documentCanvas) resetX()               { v.d.pdf.SetX(margin + v.d.indent) }
-func (v documentCanvas) contentWidth() float64 { return width - 2*margin - v.d.indent }
+func (v documentCanvas) resetX()               { v.d.pdf.SetX(v.d.margin + v.d.indent) }
+func (v documentCanvas) contentWidth() float64 { return v.d.width - 2*v.d.margin - v.d.indent }
