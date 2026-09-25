@@ -13,7 +13,7 @@ md2pdf [flags] <file.md | directory>
 | `--author <text>` | Document author; by default the `author` in the front matter |
 | `--no-page-numbers` | Leave the page numbers out |
 | `--paper <size>` | Paper size: `a4` (default), `a5`, `a3`, `letter` or `legal`, portrait |
-| `--margin <length>` | Margin on every side, such as `20mm`, `0.75in` or `56pt`; a bare number is in points. Default `56pt`; at most a quarter of the shortest side of the paper |
+| `--margin <length>` | Margin on every side, such as `20mm`, `0.75in` or `56pt`; a bare number is in points. Default `64pt`; at most a quarter of the shortest side of the paper |
 | `--version` | Print the version |
 | `-h`, `--help` | Print usage |
 

@@ -60,7 +60,8 @@ type baseStyle struct {
 	bold, italic bool
 }
 
-func heightFor(size float64) float64 {
+// LineHeight is the height of a line of text of the given font size in points.
+func LineHeight(size float64) float64 {
 	height := math.Round(size*1.35*2) / 2
 	return math.Max(lineHeight, height)
 }
@@ -105,6 +106,12 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 			canvas.LineBreak(12)
 		}
 		base := baseStyle{family: "Helvetica", size: 11, bold: true}
+		switch block.Level {
+		case 5:
+			base.italic = true
+		case 6:
+			base.bold, base.italic = false, true
+		}
 		if block.Level == 1 {
 			base.size = 20
 		}
@@ -119,7 +126,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		canvas.Style(base.family, base.bold, base.italic, base.size)
 		canvas.Bookmark(markdown.PlainText(block.Spans), block.Level)
 		spans(canvas, block.Spans, base)
-		canvas.LineBreak(heightFor(base.size))
+		canvas.LineBreak(LineHeight(base.size))
 		canvas.Indent(-indent)
 		canvas.LineBreak(6)
 	case markdown.Paragraph:
@@ -128,7 +135,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		canvas.Indent(indent)
 		canvas.Style(base.family, base.bold, base.italic, base.size)
 		spans(canvas, block.Spans, base)
-		canvas.LineBreak(heightFor(base.size))
+		canvas.LineBreak(LineHeight(base.size))
 		canvas.Indent(-indent)
 		canvas.LineBreak(6)
 	case markdown.ListItem:
@@ -152,7 +159,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 			canvas.HangingIndent()
 		}
 		spans(canvas, block.Spans, base)
-		canvas.LineBreak(heightFor(base.size))
+		canvas.LineBreak(LineHeight(base.size))
 		canvas.Indent(-indent)
 		if spaceAfter {
 			canvas.LineBreak(6)
