@@ -11,6 +11,9 @@ jobs:
   release:
     name: Build and publish
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -25,7 +28,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           in_code="$(grep -o 'md2pdf [0-9][0-9.]*' cmd/md2pdf/main.go | head -n 1 | cut -d' ' -f2)"
-          if [ "$version" != "$in_code" ]; then
+          if [ -z "$version" ] || [ -z "$in_code" ] || [ "$version" != "$in_code" ]; then
             echo "Tag $GITHUB_REF_NAME does not match version $in_code in cmd/md2pdf/main.go" >&2
             exit 1
           fi
@@ -60,7 +63,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           awk -v v="$version" '
-            $0 ~ "^## " v " " { found = 1; next }
+            index($0, "## " v " ") == 1 { found = 1; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > notes.md
@@ -68,14 +71,7 @@ jobs:
             echo "No section for $version in CHANGELOG.md" >&2
             exit 1
           fi
-          cat >> notes.md <<NOTES
-
-          ### Installing
-
-          Download the archive for your platform below and verify it against \`SHA256SUMS.txt\`, or run
-          \`go install github.com/gnutterts/md2pdf/cmd/md2pdf@$GITHUB_REF_NAME\`. Each archive contains the binary, the
-          README, the changelog, the documentation, the licence, and the third-party notices.
-          NOTES
+          printf '\n### Installing\n\nDownload the archive for your platform below and verify it against `SHA256SUMS.txt`, or run\n`go install github.com/gnutterts/md2pdf/cmd/md2pdf@%s`. Each archive contains the binary, the\nREADME, the changelog, the documentation, the licence, and the third-party notices.\n' "$GITHUB_REF_NAME" >> notes.md
 
       - name: Publish
         env:
