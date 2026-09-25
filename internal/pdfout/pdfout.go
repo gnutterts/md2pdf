@@ -56,7 +56,8 @@ type Document struct {
 
 	font    fontStyle
 	fontSet bool
-	// lineSize is the largest font size chosen since the last line break; the
+	// lineSize is the largest font size chosen since the last line break or new
+	// page, starting from the font size then in use; the
 	// height of a wrapped line follows it, not the smaller size of an inline span.
 	lineSize float64
 	strike   bool
@@ -141,7 +142,7 @@ func (d *Document) Write(path string) error {
 
 type documentCanvas struct{ d *Document }
 
-func (v documentCanvas) NewPage() { v.d.pdf.AddPage(); v.resetX() }
+func (v documentCanvas) NewPage() { v.d.pdf.AddPage(); v.d.lineSize = v.d.font.size; v.resetX() }
 func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 	style := ""
 	if bold {
@@ -229,7 +230,7 @@ func (v documentCanvas) applyFont() {
 	}
 	v.d.pdf.SetFont(v.d.font.family, v.styleString(), v.d.font.size)
 }
-func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.d.lineSize = 0; v.resetX() }
+func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.d.lineSize = v.d.font.size; v.resetX() }
 func (v documentCanvas) Indent(p float64) {
 	v.d.indent += p
 	v.d.pdf.SetLeftMargin(v.d.margin + v.d.indent)

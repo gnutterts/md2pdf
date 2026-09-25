@@ -1087,3 +1087,33 @@ func TestInlineCodeDoesNotShrinkTheLineHeightOfAHeading(t *testing.T) {
 		}
 	}
 }
+
+func TestLineHeightSurvivesALineBreakAndANewPage(t *testing.T) {
+	for _, reset := range []struct {
+		name string
+		do   func(render.Canvas)
+	}{
+		{"line break", func(c render.Canvas) { c.LineBreak(27) }},
+		{"new page", func(c render.Canvas) { c.NewPage() }},
+	} {
+		document := New()
+		canvas := document.Canvas()
+		canvas.Style("Helvetica", true, false, 20)
+		canvas.Text("first")
+		reset.do(canvas)
+		canvas.Text(strings.Repeat("wrapping words ", 30)) // no new Style call: still size 20
+		target := filepath.Join(t.TempDir(), "reset.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatal(err)
+		}
+		content, _ := os.ReadFile(target)
+		streams := contentStreams(t, content)
+		ys := lineBaselines(t, streams[len(streams)-1])
+		if len(ys) < 3 {
+			t.Fatalf("%s: %d lines, want several", reset.name, len(ys))
+		}
+		if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+			t.Errorf("%s: lines are %.2f apart, want 27", reset.name, gap)
+		}
+	}
+}
