@@ -29,6 +29,8 @@ type fakeCanvas struct {
 	style  activeStyle
 	tables [][]markdown.Row
 	scales []float64 // the scale of every diagram
+	// keepBreaks is what KeepWithNext reports.
+	keepBreaks bool
 }
 
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
