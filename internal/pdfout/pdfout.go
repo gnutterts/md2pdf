@@ -471,7 +471,7 @@ func (v documentCanvas) Image(path string) error {
 	if err != nil {
 		return errors.New("unsupported format (PNG, JPEG and GIF can be drawn)")
 	}
-	if config.Width <= 0 || config.Height <= 0 || config.Width*config.Height > maxImagePixels {
+	if config.Width <= 0 || config.Height <= 0 || config.Width > maxImagePixels/config.Height {
 		return fmt.Errorf("image of %dx%d pixels is too large", config.Width, config.Height)
 	}
 	v.d.images++

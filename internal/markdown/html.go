@@ -13,7 +13,7 @@ import (
 func htmlText(html string) []string { return htmlTextWith(html, nil) }
 
 // imageMark stands in the paragraph list for an image that became its own part.
-const imageMark = "\x00image"
+const imageMark = "\x00image\x00"
 
 // htmlPart is a paragraph of text or, when src is set, an image.
 type htmlPart struct {
@@ -37,7 +37,7 @@ func htmlParts(html string, keep func(src string) bool) []htmlPart {
 	}
 	var parts []htmlPart
 	for _, text := range htmlTextWith(html, take) {
-		if text == imageMark {
+		if text == imageMark && len(images) > 0 {
 			parts = append(parts, images[0])
 			images = images[1:]
 			continue
@@ -49,6 +49,9 @@ func htmlParts(html string, keep func(src string) bool) []htmlPart {
 
 func htmlTextWith(html string, image func(raw string) bool) []string {
 	var paragraphs []string
+	// inside counts the open tags in which an image stays text: a link, a table
+	// cell or a heading, as it does in Markdown.
+	inside := 0
 	var current []byte
 	for i := 0; i < len(html); {
 		if html[i] != '<' {
@@ -86,7 +89,18 @@ func htmlTextWith(html string, image func(raw string) bool) []string {
 				continue
 			}
 		} else {
-			processHTMLTag(name, closing, html[i+1:end], &current, &paragraphs, image)
+			if keepsImageAsText(name) {
+				if closing {
+					inside = max(inside-1, 0)
+				} else if !strings.HasSuffix(strings.TrimSpace(html[i+1:end]), "/") {
+					inside++
+				}
+			}
+			take := image
+			if inside > 0 {
+				take = nil
+			}
+			processHTMLTag(name, closing, html[i+1:end], &current, &paragraphs, take)
 		}
 		i = end + 1
 	}
@@ -286,4 +300,13 @@ func isBreakTag(tag []byte) bool {
 		i++
 	}
 	return i > 0 && strings.EqualFold(inner[:i], "br")
+}
+
+// keepsImageAsText reports whether an image inside this tag keeps its alt text.
+func keepsImageAsText(name string) bool {
+	switch name {
+	case "a", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6":
+		return true
+	}
+	return false
 }

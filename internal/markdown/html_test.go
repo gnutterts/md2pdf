@@ -151,3 +151,29 @@ func TestHTMLTextKeepsStrayAngleBrackets(t *testing.T) {
 		})
 	}
 }
+
+func TestHTMLImagesInLinksCellsAndHeadingsStayText(t *testing.T) {
+	for _, html := range []string{
+		`<a href="x"><img src="a.png" alt="A"></a>`,
+		`<table><tr><td><img src="a.png" alt="A"></td></tr></table>`,
+		`<h2>Title <img src="a.png" alt="A"></h2>`,
+	} {
+		for _, part := range htmlParts(html, func(string) bool { return true }) {
+			if part.src != "" {
+				t.Errorf("%s: the image became a block", html)
+			}
+		}
+	}
+	// After the link is closed, an image is a block again.
+	parts := htmlParts(`<p><a href="x">link</a> <img src="b.png" alt="B"></p>`, func(string) bool { return true })
+	if len(parts) != 2 || parts[1].src != "b.png" {
+		t.Fatalf("parts = %+v", parts)
+	}
+}
+
+func TestTextThatLooksLikeTheImageMarkStaysText(t *testing.T) {
+	parts := htmlParts("<p>"+imageMark+"</p>", func(string) bool { return true })
+	if len(parts) != 1 || parts[0].src != "" {
+		t.Fatalf("parts = %+v", parts)
+	}
+}
