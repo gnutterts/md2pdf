@@ -6,6 +6,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -301,6 +302,7 @@ func pdfName(source string) string {
 
 // setLayout validates --paper and --margin and stores them in the plan.
 func setLayout(plan *Plan, paper, margin string) error {
+	paper = strings.TrimSpace(paper)
 	width, height := 595.28, 841.89
 	if paper != "" {
 		w, h, ok := pdfout.PaperSize(paper)
@@ -336,7 +338,7 @@ func ParseLength(text string) (float64, error) {
 	case strings.HasSuffix(text, "pt"):
 	}
 	number, err := strconv.ParseFloat(strings.TrimSuffix(text, unit), 64)
-	if err != nil {
+	if err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
 		return 0, fmt.Errorf("%q is not a length such as 20mm, 0.75in or 56pt", text)
 	}
 	if number <= 0 {

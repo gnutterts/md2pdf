@@ -249,7 +249,7 @@ func TestParseLength(t *testing.T) {
 		bad  bool
 	}{
 		{"20mm", 56.692913, false}, {"1in", 72, false}, {"40", 40, false}, {"56pt", 56, false},
-		{"0.75IN", 54, false}, {"abc", 0, true}, {"-5pt", 0, true}, {"0", 0, true}, {"mm", 0, true},
+		{"0.75IN", 54, false}, {"abc", 0, true}, {"-5pt", 0, true}, {"0", 0, true}, {"mm", 0, true}, {"NaN", 0, true}, {"nanpt", 0, true}, {"Inf", 0, true}, {"1e999mm", 0, true},
 	} {
 		got, err := ParseLength(test.in)
 		if test.bad {
@@ -269,6 +269,9 @@ func TestParsePaperAndMargin(t *testing.T) {
 	plan, err := Parse([]string{"--paper", "LETTER", "--margin", "1in", "notes.md"}, fs)
 	if err != nil || plan.Paper != "letter" || plan.Margin != 72 {
 		t.Fatalf("Paper=%q Margin=%v err=%v", plan.Paper, plan.Margin, err)
+	}
+	if plan, err = Parse([]string{"--paper", " a4 ", "notes.md"}, fs); err != nil || plan.Paper != "a4" {
+		t.Fatalf("padded paper name: Paper=%q err=%v", plan.Paper, err)
 	}
 	plan, err = Parse([]string{"notes.md"}, fs)
 	if err != nil || plan.Paper != "" || plan.Margin != 0 {
