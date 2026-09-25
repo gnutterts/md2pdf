@@ -30,16 +30,34 @@ func Run(plan cli.Plan, options render.Options) error {
 		}
 		return renderMerged(plan, plan.Tasks[0], options)
 	case cli.ModeSeparate:
+		failed := 0
 		for _, task := range plan.Tasks {
 			if len(task.Sources) != 1 {
 				return errors.New("invalid output plan for separate files")
 			}
-			if err := os.MkdirAll(filepath.Dir(task.Target), 0o755); err != nil {
-				return fmt.Errorf("cannot write %q: %w", task.Target, err)
+			err := os.MkdirAll(filepath.Dir(task.Target), 0o755)
+			if err != nil {
+				err = fmt.Errorf("cannot write %q: %w", task.Target, err)
+			} else {
+				err = renderTask(plan, task, options)
 			}
-			if err := renderTask(plan, task, options); err != nil {
+			if err == nil {
+				continue
+			}
+			if plan.Strict {
 				return err
 			}
+			failed++
+			if options.Warn != nil {
+				options.Warn(fmt.Sprintf("skipped %q: %v", task.Sources[0], err))
+			}
+		}
+		if failed > 0 {
+			noun := "files"
+			if len(plan.Tasks) == 1 {
+				noun = "file"
+			}
+			return fmt.Errorf("%d of %d %s failed", failed, len(plan.Tasks), noun)
 		}
 		return nil
 	default:

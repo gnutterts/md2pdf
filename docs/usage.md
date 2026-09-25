@@ -48,7 +48,9 @@ file-name order. Names starting with `_` are skipped; a file with such a name th
 as an argument is still processed.
 
 In merged mode, every source file starts on a new page. With `--separate`, an output directory that does
-not yet exist is created.
+not yet exist is created. A file that cannot be read or written is skipped with a warning and the other
+files are still made; the run then ends with `error: 1 of 13 files failed` and exit code 1. With `--strict`
+the batch stops at the first failure.
 
 ## Mermaid
 
