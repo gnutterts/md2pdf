@@ -15,6 +15,7 @@
   page, and formatting and links inside cells.
 - **Thematic breaks**.
 - **Page numbers** (`n / N`, centred in grey below the text); turn them off with `--no-page-numbers`.
+- **Table of contents** with `--toc`; see [Usage](usage.md#table-of-contents).
 - **Bookmarks**: every heading becomes an entry in the outline of the PDF viewer.
 - **Images** in PNG, JPEG or GIF, from `![alt](path)` or an HTML `<img src>`, with the path relative to the
   Markdown file. An image is drawn at its natural size (96 pixels to the inch) and never wider than the text.

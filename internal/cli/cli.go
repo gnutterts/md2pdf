@@ -46,6 +46,10 @@ type Plan struct {
 	MermaidTimeout string
 	// Scale is the raw --scale value; mermaid.ChooseScale validates it.
 	Scale string
+	// TOC puts a table of contents first (--toc); TOCDepth is the deepest heading
+	// level in it (--toc-depth, 1 to 6; 0 means 3).
+	TOC      bool
+	TOCDepth int
 	// Strict turns warnings into errors (--strict).
 	Strict bool
 	// Paper and Margin come from --paper and --margin; empty and zero mean the defaults.
@@ -96,7 +100,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--toc] [--toc-depth n] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -128,6 +132,14 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	}
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
+	plan.TOC = f.toc
+	if f.tocDepth != nil {
+		depth, err := strconv.Atoi(*f.tocDepth)
+		if err != nil || depth < 1 || depth > 6 {
+			return Plan{}, fmt.Errorf("--toc-depth %q must be a heading level from 1 to 6", *f.tocDepth)
+		}
+		plan.TOC, plan.TOCDepth = true, depth
+	}
 	plan.Scale = f.scale
 	plan.MermaidTimeout = f.timeout
 	plan.Strict = f.strict
@@ -148,6 +160,8 @@ type flags struct {
 	title     string
 	author    string
 	noNumbers bool
+	toc       bool
+	tocDepth  *string
 	scale     string
 	timeout   string
 	strict    bool
@@ -190,6 +204,12 @@ func parseArgs(args []string) (flags, error) {
 			}
 			i++
 			f.mermaid = args[i]
+		case "--toc":
+			f.toc = true
+		case "--toc-depth":
+			var depth string
+			depth, err = value(&i, "--toc-depth")
+			f.tocDepth = &depth
 		case "--strict":
 			f.strict = true
 		case "--force":

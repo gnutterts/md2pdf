@@ -13,6 +13,8 @@ md2pdf [flags] <file.md | directory>
 | `--author <text>` | Document author; by default the `author` in the front matter |
 | `--scale <n>` | Sharpness of Mermaid diagrams, from 1 to 4; default 2. `MD2PDF_SCALE` can also set it |
 | `--mermaid-timeout <duration>` | Time limit per diagram, such as `45s` or `2m`; default `30s`. `MD2PDF_MERMAID_TIMEOUT` can also set it |
+| `--toc` | Start the PDF with a clickable table of contents |
+| `--toc-depth <n>` | Deepest heading level in the table of contents, 1 to 6; default 3. Implies `--toc` |
 | `--strict` | Treat every warning as an error: stop at the first one, write no PDF, and exit with code 1 |
 | `--force` | Allow `-o` to overwrite an existing file that is not a PDF |
 | `--no-page-numbers` | Leave the page numbers out |
@@ -55,6 +57,14 @@ In merged mode, every source file starts on a new page. With `--separate`, an ou
 not yet exist is created. A file that cannot be read or written is skipped with a warning and the other
 files are still made; the run then ends with `error: 1 of 13 files failed` and exit code 1. With `--strict`
 the batch stops at the first failure.
+
+## Table of contents
+
+With `--toc`, the PDF starts with a page titled *Contents* that lists the headings with their page numbers;
+every entry links to its heading. In a merged directory there is one table for the whole document; with
+`--separate`, every PDF gets its own. Page numbers are only known once the document is laid out, so the
+document is drawn twice, which roughly doubles the time for large documents (diagrams are not rendered
+twice). A document without headings up to the chosen level gets no table and a warning.
 
 ## Mermaid
 
