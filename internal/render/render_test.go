@@ -570,3 +570,20 @@ func TestTheDiagramCacheRendersOnceUnderConcurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestAnImageBlockDrawsNoAltTextYet(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "before"}}},
+		{Kind: markdown.Image, Path: "p.png", Spans: []markdown.Span{{Text: "secret alt"}}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range canvas.calls {
+		if strings.Contains(call, "secret alt") {
+			t.Fatalf("alt text leaked: %v", canvas.calls)
+		}
+	}
+}
