@@ -32,6 +32,23 @@ stack as well.
 The PDF also records `md2pdf <version>` as its creator. With `--separate`, `--title` and `--author` apply to
 every file; without them each file gets its own title and author.
 
+## Stability
+
+From version 1.0.0 on, the command line is stable: what is listed here keeps working the same way in every
+1.x release, and a change that could break a script waits for 2.0.
+
+- Every flag in the table above, with its meaning and its default.
+- The environment variables `MD2PDF_MERMAID`, `MD2PDF_SCALE`, `MD2PDF_MERMAID_TIMEOUT`, `MD2PDF_FONT`,
+  `MD2PDF_FONT_MONO` and `MD2PDF_DEBUG`, and that a flag wins over its variable.
+- The exit codes: 0 when the PDF was written, also with warnings; 1 for every error.
+- Errors on stderr start with `error:`, warnings with `warning:`.
+- Where the PDF goes, which files a directory contributes, in which order, and that names starting with `_`
+  are skipped.
+- The names of the font files in a `--font` directory.
+
+New flags may be added in a 1.x release. Not covered: the exact appearance of the PDF, such as fonts, spacing
+and colours, and the wording of messages after the `error:` or `warning:` prefix.
+
 ## Where the PDF goes
 
 Without `-o`, output is placed next to the input:

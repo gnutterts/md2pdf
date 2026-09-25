@@ -103,8 +103,43 @@ var (
 	ErrVersion = errors.New("version requested")
 )
 
-// Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--font dir] [--font-mono dir] [--toc] [--toc-depth n] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
+// Usage is the one-line synopsis, shown with an error about the arguments.
+const Usage = "Usage: md2pdf [flags] <file.md | directory>   (md2pdf --help lists the flags)"
+
+// Help is the full help text for --help.
+const Help = `Usage: md2pdf [flags] <file.md | directory>
+
+Convert Markdown to PDF: one file, a directory merged into one PDF, or one PDF
+per file with --separate.
+
+Output
+  -o <path>                  output file, or output directory with --separate
+  -s, --separate             one PDF for every Markdown file in the directory
+  --force                    let -o overwrite an existing file that is not a PDF
+
+Document
+  --title <text>             document title (default: front matter, first
+                             level 1 heading, or file name)
+  --author <text>            document author (default: front matter)
+  --paper <size>             a4 (default), a5, a3, letter or legal
+  --margin <length>          margin on every side, e.g. 20mm, 0.75in, 64pt
+  --no-page-numbers          leave the page numbers out
+  --toc                      start with a clickable table of contents
+  --toc-depth <n>            deepest heading level listed, 1 to 6 (default 3)
+  --font <dir>               own text font: Regular.ttf, Bold.ttf, ... (MD2PDF_FONT)
+  --font-mono <dir>          own code font, the same way (MD2PDF_FONT_MONO)
+
+Mermaid diagrams
+  --mermaid <path>           renderer to use, or off (MD2PDF_MERMAID; default mmdc)
+  --scale <n>                sharpness from 1 to 4 (MD2PDF_SCALE; default 2)
+  --mermaid-timeout <d>      time limit per diagram, e.g. 45s (MD2PDF_MERMAID_TIMEOUT)
+
+Other
+  --strict                   treat every warning as an error
+  --version                  print the version
+  -h, --help                 print this help
+
+Documentation: https://github.com/gnutterts/md2pdf/tree/main/docs`
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {

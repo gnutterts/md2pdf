@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -416,5 +417,37 @@ func TestParseFontDirectories(t *testing.T) {
 	}
 	if _, err := Parse([]string{"--font", t.TempDir(), "notes.md"}, fs); err == nil || !strings.Contains(err.Error(), "Regular.ttf") {
 		t.Fatalf("an empty directory: err = %v", err)
+	}
+}
+
+// TestEveryFlagIsDocumented keeps the flags that parseArgs accepts, the help
+// text and docs/usage.md in step: a flag that is missing from either fails.
+func TestEveryFlagIsDocumented(t *testing.T) {
+	source, err := os.ReadFile("cli.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := os.ReadFile(filepath.Join("..", "..", "docs", "usage.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flags []string
+	for _, match := range regexp.MustCompile(`(?m)^\t\tcase ("-[^:]+):`).FindAllStringSubmatch(string(source), -1) {
+		for _, flag := range regexp.MustCompile(`"(-[^"]*)"`).FindAllStringSubmatch(match[1], -1) {
+			if flag[1] != "--" {
+				flags = append(flags, flag[1])
+			}
+		}
+	}
+	if len(flags) < 15 {
+		t.Fatalf("found only %d flags in cli.go: %v", len(flags), flags)
+	}
+	for _, flag := range flags {
+		if !regexp.MustCompile(`(^|[\s,])` + regexp.QuoteMeta(flag) + `([\s,]|$)`).MatchString(Help) {
+			t.Errorf("%s is missing from Help", flag)
+		}
+		if !strings.Contains(string(usage), "`"+flag) {
+			t.Errorf("%s is missing from docs/usage.md", flag)
+		}
 	}
 }
