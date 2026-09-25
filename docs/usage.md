@@ -19,7 +19,9 @@ md2pdf [flags] <file.md | directory>
 | `--version` | Print the version |
 | `-h`, `--help` | Print usage |
 
-Errors are written to stderr as `error: <reason>` and the exit code is 1.
+Errors are written to stderr as `error: <reason>` and the exit code is 1. An unexpected failure inside md2pdf
+is reported as `error: internal error: <reason>`, also with exit code 1; set `MD2PDF_DEBUG=1` to print the
+stack as well.
 
 The PDF also records `md2pdf <version>` as its creator. With `--separate`, `--title` and `--author` apply to
 every file; without them each file gets its own title and author.
