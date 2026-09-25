@@ -146,7 +146,7 @@ func readSource(path string) (source, error) {
 		return source{}, fmt.Errorf("cannot read %q: %w", path, err)
 	}
 	meta, _ := markdown.SplitFrontMatter(data)
-	blocks, err := markdown.Parse(data)
+	blocks, err := markdown.ParseIn(data, filepath.Dir(path))
 	if err != nil {
 		return source{}, err
 	}
