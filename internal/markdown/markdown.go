@@ -94,6 +94,27 @@ type walkParams struct {
 	inItem  bool
 }
 
+// PlainText joins spans into text without formatting.
+func PlainText(spans []Span) string {
+	var b strings.Builder
+	for _, span := range spans {
+		b.WriteString(span.Text)
+	}
+	return strings.TrimSpace(strings.Join(strings.Fields(b.String()), " "))
+}
+
+// FirstHeading is the plain text of the first level 1 heading, or empty.
+func FirstHeading(blocks []Block) string {
+	for _, block := range blocks {
+		if block.Kind == Heading && block.Level == 1 {
+			if text := PlainText(block.Spans); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
 // Parse reads Markdown into a flat document structure.
 func Parse(source []byte) ([]Block, error) {
 	_, source = SplitFrontMatter(source)

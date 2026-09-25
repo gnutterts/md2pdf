@@ -35,6 +35,11 @@ type Plan struct {
 	Mode    Mode
 	Tasks   []Task
 	Mermaid string
+	// Title and Author come from --title and --author; empty means unset.
+	Title  string
+	Author string
+	// Creator names the program in the PDF; the entry point sets it.
+	Creator string
 }
 
 // FileSystem contains the read operations needed for planning.
@@ -76,14 +81,15 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
-	separate, output, mermaid, positions, err := parseArgs(args)
+	f, err := parseArgs(args)
 	if err != nil {
 		return Plan{}, err
 	}
+	positions := f.positions
 	if len(positions) == 0 {
 		return Plan{}, fmt.Errorf("no input given\n%s", Usage)
 	}
@@ -96,50 +102,80 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	if err != nil {
 		return Plan{}, fmt.Errorf("cannot read %q: %w", input, err)
 	}
+	var plan Plan
 	if !isDir {
-		return planFile(input, output, mermaid, separate, fs)
+		plan, err = planFile(input, f.output, f.mermaid, f.separate, fs)
+	} else {
+		plan, err = planDir(input, f.output, f.mermaid, f.separate, fs)
 	}
-	return planDir(input, output, mermaid, separate, fs)
+	if err != nil {
+		return Plan{}, err
+	}
+	plan.Title, plan.Author = f.title, f.author
+	return plan, nil
+}
+
+// flags are the parsed command-line arguments.
+type flags struct {
+	separate  bool
+	output    string
+	mermaid   string
+	title     string
+	author    string
+	positions []string
 }
 
 // parseArgs separates flags from positional arguments. ErrHelp and ErrVersion
 // are returned as errors; the caller recognizes them with errors.Is.
-func parseArgs(args []string) (bool, string, string, []string, error) {
-	var separate bool
-	var output, mermaid string
-	var positions []string
+func parseArgs(args []string) (flags, error) {
+	var f flags
+	value := func(i *int, name string) (string, error) {
+		if *i+1 == len(args) {
+			return "", fmt.Errorf("%s expects a value", name)
+		}
+		*i++
+		return args[*i], nil
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		var err error
 		switch arg {
 		case "-h", "--help":
-			return false, "", "", nil, ErrHelp
+			return flags{}, ErrHelp
 		case "--version":
-			return false, "", "", nil, ErrVersion
+			return flags{}, ErrVersion
 		case "--separate", "-s":
-			separate = true
+			f.separate = true
 		case "-o":
 			if i+1 == len(args) {
-				return false, "", "", nil, errors.New("-o expects a path")
+				return flags{}, errors.New("-o expects a path")
 			}
 			i++
-			output = args[i]
+			f.output = args[i]
 		case "--mermaid":
 			if i+1 == len(args) {
-				return false, "", "", nil, errors.New("--mermaid expects a path")
+				return flags{}, errors.New("--mermaid expects a path")
 			}
 			i++
-			mermaid = args[i]
+			f.mermaid = args[i]
+		case "--title":
+			f.title, err = value(&i, "--title")
+		case "--author":
+			f.author, err = value(&i, "--author")
 		case "--":
-			positions = append(positions, args[i+1:]...)
+			f.positions = append(f.positions, args[i+1:]...)
 			i = len(args)
 		default:
 			if strings.HasPrefix(arg, "-") {
-				return false, "", "", nil, fmt.Errorf("unknown flag: %s", arg)
+				return flags{}, fmt.Errorf("unknown flag: %s", arg)
 			}
-			positions = append(positions, arg)
+			f.positions = append(f.positions, arg)
+		}
+		if err != nil {
+			return flags{}, err
 		}
 	}
-	return separate, output, mermaid, positions, nil
+	return f, nil
 }
 
 func planFile(input, output, mermaid string, separate bool, fs FileSystem) (Plan, error) {

@@ -213,3 +213,19 @@ func separateTasks(dirName, targetDir string) []Task {
 	}
 	return tasks
 }
+
+func TestParseTitleAndAuthor(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	plan, err := Parse([]string{"--title", "My Title", "--author", "Ann", "notes.md"}, fs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Title != "My Title" || plan.Author != "Ann" {
+		t.Fatalf("Title=%q Author=%q", plan.Title, plan.Author)
+	}
+	for _, flag := range []string{"--title", "--author"} {
+		if _, err := Parse([]string{"notes.md", flag}, fs); err == nil || !strings.Contains(err.Error(), flag) {
+			t.Fatalf("%s without a value: err = %v", flag, err)
+		}
+	}
+}

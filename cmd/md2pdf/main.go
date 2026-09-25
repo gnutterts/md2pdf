@@ -35,6 +35,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	plan.Creator = version
 	options := render.Options{
 		Mermaid: mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID")),
 		Warn: func(message string) {

@@ -259,3 +259,24 @@ func TestParseByteOrderMarkWithoutFrontMatter(t *testing.T) {
 		t.Fatalf("blocks = %v, want the text without a byte order mark", blocks)
 	}
 }
+
+func TestMetadataGetIgnoresCase(t *testing.T) {
+	meta, _ := SplitFrontMatter([]byte("---\nTitle: Hello\nauthor: Ann\n---\ntext\n"))
+	if meta.Get("title") != "Hello" || meta.Get("AUTHOR") != "Ann" || meta.Get("missing") != "" {
+		t.Fatalf("unexpected fields: %v", meta)
+	}
+}
+
+func TestFirstHeadingUsesPlainTextOfFirstLevelOne(t *testing.T) {
+	blocks, err := Parse([]byte("## Second\n\n# The *first* `one`\n\n# Later\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := FirstHeading(blocks); got != "The first one" {
+		t.Fatalf("FirstHeading = %q", got)
+	}
+	blocks, _ = Parse([]byte("text only\n"))
+	if got := FirstHeading(blocks); got != "" {
+		t.Fatalf("FirstHeading without heading = %q", got)
+	}
+}
