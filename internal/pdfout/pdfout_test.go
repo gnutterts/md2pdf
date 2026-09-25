@@ -760,7 +760,6 @@ func TestSetInfoWritesTitleAuthorAndCreator(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestPageNumbersAppearInTheFooter(t *testing.T) {
 	document := New()
 	document.SetPageNumbers(true)
@@ -772,41 +771,6 @@ func TestPageNumbersAppearInTheFooter(t *testing.T) {
 	canvas.NewPage()
 	canvas.Text("third")
 	target := filepath.Join(t.TempDir(), "numbers.pdf")
-=======
-// outlineTitles decodes the UTF-16 titles of the outline entries in document order.
-func outlineTitles(content []byte) []string {
-	var titles []string
-	marker := []byte("/Title (\xfe\xff")
-	for rest := content; ; {
-		at := bytes.Index(rest, marker)
-		if at < 0 {
-			return titles
-		}
-		raw := rest[at+len(marker):]
-		raw = raw[:bytes.IndexByte(raw, ')')]
-		var units []uint16
-		for i := 0; i+1 < len(raw); i += 2 {
-			units = append(units, uint16(raw[i])<<8|uint16(raw[i+1]))
-		}
-		titles = append(titles, string(utf16.Decode(units)))
-		rest = rest[at+len(marker):]
-	}
-}
-
-func TestBookmarksFormAContiguousOutline(t *testing.T) {
-	document := New()
-	canvas := document.Canvas()
-	canvas.Style("Helvetica", true, false, 20)
-	for _, heading := range []struct {
-		title string
-		level int
-	}{{"First", 3}, {"Deep", 5}, {"Back", 1}, {"Again", 3}} {
-		canvas.Bookmark(heading.title, heading.level)
-		canvas.Text(heading.title)
-		canvas.LineBreak(20)
-	}
-	target := filepath.Join(t.TempDir(), "outline.pdf")
->>>>>>> 2f42683 (Add a bookmark for every heading)
 	if err := document.Write(target); err != nil {
 		t.Fatal(err)
 	}
@@ -884,6 +848,65 @@ func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 	canvas.NewPage()
 	canvas.Text("after")
 	target := filepath.Join(t.TempDir(), "font.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if !strings.Contains(string(streams[0]), "0.502 g") {
+		t.Fatal("the footer of page 1 is not grey; this test no longer checks anything")
+	}
+	second := string(streams[1])
+	at := strings.Index(second, "(after)")
+	if at < 0 {
+		t.Fatal("second page has no text")
+	}
+	before := second[:at]
+	if strings.Contains(before, "0.502 g") {
+		t.Fatal("body text after the footer is still grey")
+	}
+}
+
+// outlineTitles decodes the UTF-16 titles of the outline entries in document order.
+func outlineTitles(content []byte) []string {
+	var titles []string
+	marker := []byte("/Title (\xfe\xff")
+	for rest := content; ; {
+		at := bytes.Index(rest, marker)
+		if at < 0 {
+			return titles
+		}
+		raw := rest[at+len(marker):]
+		raw = raw[:bytes.IndexByte(raw, ')')]
+		var units []uint16
+		for i := 0; i+1 < len(raw); i += 2 {
+			units = append(units, uint16(raw[i])<<8|uint16(raw[i+1]))
+		}
+		titles = append(titles, string(utf16.Decode(units)))
+		rest = rest[at+len(marker):]
+	}
+}
+
+func TestBookmarksFormAContiguousOutline(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	for _, heading := range []struct {
+		title string
+		level int
+	}{{"First", 3}, {"Deep", 5}, {"Back", 1}, {"Again", 3}} {
+		canvas.Bookmark(heading.title, heading.level)
+		canvas.Text(heading.title)
+		canvas.LineBreak(20)
+	}
+	target := filepath.Join(t.TempDir(), "outline.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !bytes.Contains(content, []byte("/Outlines")) {
 		t.Fatal("no outline in the PDF")
 	}
@@ -951,18 +974,6 @@ func TestBookmarkOnSecondPageTargetsThatPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	content, _ := os.ReadFile(target)
-	streams := contentStreams(t, content)
-	if !strings.Contains(string(streams[0]), "0.502 g") {
-		t.Fatal("the footer of page 1 is not grey; this test no longer checks anything")
-	}
-	second := string(streams[1])
-	at := strings.Index(second, "(after)")
-	if at < 0 {
-		t.Fatal("second page has no text")
-	}
-	before := second[:at]
-	if strings.Contains(before, "0.502 g") {
-		t.Fatal("body text after the footer is still grey")
 	dests := regexp.MustCompile(`/Dest \[(\d+) 0 R /XYZ`).FindAllSubmatch(content, -1)
 	if len(dests) != 2 || string(dests[0][1]) == string(dests[1][1]) {
 		t.Fatalf("both bookmarks point at the same page: %q", dests)
