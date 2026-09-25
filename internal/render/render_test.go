@@ -24,6 +24,7 @@ type fakeCanvas struct {
 	calls  []string
 	style  activeStyle
 	tables [][]markdown.Row
+	scales []float64 // the scale of every diagram
 }
 
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
@@ -59,8 +60,12 @@ func (n *fakeCanvas) HangingIndent() { n.calls = append(n.calls, "hanging") }
 func (n *fakeCanvas) CodeBlock(r []string) {
 	n.calls = append(n.calls, "code:"+strings.Join(r, ","))
 }
-func (n *fakeCanvas) Diagram([]byte) error { n.calls = append(n.calls, "diagram"); return nil }
-func (n *fakeCanvas) Rule()                { n.calls = append(n.calls, "rule") }
+func (n *fakeCanvas) Diagram(_ []byte, scale float64) error {
+	n.calls = append(n.calls, "diagram")
+	n.scales = append(n.scales, scale)
+	return nil
+}
+func (n *fakeCanvas) Rule() { n.calls = append(n.calls, "rule") }
 func (n *fakeCanvas) Bookmark(text string, level int) {
 	n.calls = append(n.calls, fmt.Sprintf("bookmark:%d:%s", level, text))
 }
@@ -463,5 +468,20 @@ func TestStrictStopsInsideAQuote(t *testing.T) {
 		if strings.HasPrefix(call, "text:after") {
 			t.Fatalf("drawing went on after the strict error: %v", canvas.calls)
 		}
+	}
+}
+
+func TestDiagramsAreDrawnWithTheRendererScale(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf png > \"$4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	canvas := &fakeCanvas{}
+	block := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}}}
+	if err := Draw(block, canvas, Options{Mermaid: mermaid.Renderer{Path: path, Scale: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(canvas.scales) != 1 || canvas.scales[0] != 2 {
+		t.Fatalf("scales = %v, want [2]", canvas.scales)
 	}
 }

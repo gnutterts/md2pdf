@@ -11,6 +11,7 @@ md2pdf [flags] <file.md | directory>
 | `--mermaid <path>` | Path to the Mermaid renderer; `MD2PDF_MERMAID` can also set it, and `off` disables rendering |
 | `--title <text>` | Document title; by default the `title` in the front matter, else the first level 1 heading, else the file name (the directory name when a directory is merged) |
 | `--author <text>` | Document author; by default the `author` in the front matter |
+| `--scale <n>` | Sharpness of Mermaid diagrams, from 1 to 4; default 2. `MD2PDF_SCALE` can also set it |
 | `--strict` | Treat every warning as an error: stop at the first one, write no PDF, and exit with code 1 |
 | `--force` | Allow `-o` to overwrite an existing file that is not a PDF |
 | `--no-page-numbers` | Leave the page numbers out |

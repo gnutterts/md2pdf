@@ -48,10 +48,16 @@ func runWith(args []string, execute func(cli.Plan, render.Options) error) (err e
 	if err != nil {
 		return err
 	}
+	scale, err := mermaid.ChooseScale(plan.Scale, os.Getenv("MD2PDF_SCALE"))
+	if err != nil {
+		return err
+	}
+	renderer := mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID"))
+	renderer.Scale = scale
 	plan.Creator = version
 	options := render.Options{
 		Strict:  plan.Strict,
-		Mermaid: mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID")),
+		Mermaid: renderer,
 		Warn: func(message string) {
 			fmt.Fprintln(os.Stderr, "warning:", message)
 		},

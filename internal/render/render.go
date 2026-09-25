@@ -48,7 +48,8 @@ type Canvas interface {
 	Table(rows []markdown.Row)
 	// Diagram draws a PNG at the full text width, preserving
 	// proportions, and starts on a new page when it no longer fits.
-	Diagram(png []byte) error
+	// scale is how many times larger than its size on the page the PNG was rendered.
+	Diagram(png []byte, scale float64) error
 	Err() error
 }
 
@@ -185,7 +186,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 			canvas.Indent(indent)
 			png, err := options.Mermaid.ToPNG(strings.Join(block.Lines, "\n"))
 			if err == nil {
-				err = canvas.Diagram(png)
+				err = canvas.Diagram(png, options.Mermaid.Scale)
 			}
 			if err == nil {
 				canvas.LineBreak(6)
