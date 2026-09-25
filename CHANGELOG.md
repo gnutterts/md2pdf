@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.0 — 2026-09-26
+
+This release draws every character, and makes the command line a promise.
+
+### Added
+
+- Text is set in DejaVu Sans and code in DejaVu Sans Mono, both embedded. Greek, Cyrillic, arrows,
+  mathematical symbols and many other characters that used to become question marks are drawn; only the
+  characters a document uses are stored in the PDF.
+- `--font` and `--font-mono` (also `MD2PDF_FONT` and `MD2PDF_FONT_MONO`) take a directory with your own
+  TrueType fonts, for example for Chinese, Japanese or Korean.
+- `md2pdf --help` lists every flag.
+- [docs/usage.md](docs/usage.md#stability) states what stays the same in every 1.x release.
+
+### Changed
+
+- The binary is about 4 MB larger because of the embedded fonts, and PDFs grow by some tens of kilobytes.
+
+### Removed
+
+- The transliteration to cp1252 (`→` became `->`, other characters `?`): the fonts draw the characters
+  themselves.
+
 ## 0.6.0 — 2026-09-26
 
 This release adds a table of contents.
