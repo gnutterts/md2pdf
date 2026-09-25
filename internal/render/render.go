@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
@@ -71,6 +72,9 @@ func LineHeight(size float64) float64 {
 type Options struct {
 	Mermaid mermaid.Renderer
 	Warn    func(message string)
+	// Diagram renders the text of a diagram to a PNG. When nil, Mermaid.ToPNG is used;
+	// NewDiagramCache makes a version that renders every distinct text once.
+	Diagram func(text string) ([]byte, error)
 	// Strict turns every warning into an error: Draw stops at the first one and
 	// returns it.
 	Strict bool
@@ -184,7 +188,11 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 		if block.Language == "mermaid" && options.Mermaid.Available() {
 			indent := continuationIndent(block)
 			canvas.Indent(indent)
-			png, err := options.Mermaid.ToPNG(strings.Join(block.Lines, "\n"))
+			produce := options.Diagram
+			if produce == nil {
+				produce = options.Mermaid.ToPNG
+			}
+			png, err := produce(strings.Join(block.Lines, "\n"))
 			if err == nil {
 				err = canvas.Diagram(png, options.Mermaid.Scale)
 			}
@@ -297,4 +305,30 @@ func spans(canvas Canvas, spans []markdown.Span, base baseStyle) {
 		}
 	}
 	canvas.Strike(false)
+}
+
+type diagramResult struct {
+	png []byte
+	err error
+}
+
+// NewDiagramCache wraps produce so that every distinct diagram text is
+// rendered once. Failures are remembered too: a broken diagram does not cost
+// its time limit again, although every place it appears still gets a warning.
+func NewDiagramCache(produce func(text string) ([]byte, error)) func(text string) ([]byte, error) {
+	var mutex sync.Mutex
+	results := map[string]diagramResult{}
+	return func(text string) ([]byte, error) {
+		mutex.Lock()
+		result, ok := results[text]
+		mutex.Unlock()
+		if ok {
+			return result.png, result.err
+		}
+		png, err := produce(text)
+		mutex.Lock()
+		results[text] = diagramResult{png: png, err: err}
+		mutex.Unlock()
+		return png, err
+	}
 }

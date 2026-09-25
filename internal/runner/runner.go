@@ -18,6 +18,10 @@ import (
 
 // Run processes all tasks in plan.
 func Run(plan cli.Plan, options render.Options) error {
+	if options.Diagram == nil && options.Mermaid.Available() {
+		// One cache for the whole run: a diagram that appears in several files is rendered once.
+		options.Diagram = render.NewDiagramCache(options.Mermaid.ToPNG)
+	}
 	switch plan.Mode {
 	case cli.ModeSingle:
 		if len(plan.Tasks) != 1 || len(plan.Tasks[0].Sources) != 1 {

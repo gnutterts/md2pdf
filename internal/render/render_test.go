@@ -3,6 +3,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -483,5 +484,51 @@ func TestDiagramsAreDrawnWithTheRendererScale(t *testing.T) {
 	}
 	if len(canvas.scales) != 1 || canvas.scales[0] != 2 {
 		t.Fatalf("scales = %v, want [2]", canvas.scales)
+	}
+}
+
+func TestTheDiagramCacheRendersEachTextOnce(t *testing.T) {
+	calls := map[string]int{}
+	cache := NewDiagramCache(func(text string) ([]byte, error) { calls[text]++; return []byte("png:" + text), nil })
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}},
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}},
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "C-->D"}},
+	}
+	canvas := &fakeCanvas{}
+	if err := Draw(blocks, canvas, Options{Mermaid: mermaid.Renderer{Path: "unused"}, Diagram: cache}); err != nil {
+		t.Fatal(err)
+	}
+	if calls["graph TD\nA-->B"] != 1 || calls["graph TD\nC-->D"] != 1 || len(calls) != 2 {
+		t.Fatalf("calls = %v, want one per distinct text", calls)
+	}
+	if n := len(canvas.scales); n != 3 {
+		t.Fatalf("%d diagrams drawn, want 3", n)
+	}
+}
+
+func TestTheDiagramCacheRemembersAFailureButEveryPlaceWarns(t *testing.T) {
+	calls := 0
+	cache := NewDiagramCache(func(string) ([]byte, error) { calls++; return nil, errors.New("broken") })
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}},
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}},
+	}
+	warnings := 0
+	err := Draw(blocks, &fakeCanvas{}, Options{Mermaid: mermaid.Renderer{Path: "unused"}, Diagram: cache, Warn: func(string) { warnings++ }})
+	if err != nil || calls != 1 || warnings != 2 {
+		t.Fatalf("err = %v, calls = %d, warnings = %d, want nil, 1, 2", err, calls, warnings)
+	}
+}
+
+func TestWithoutADiagramFunctionTheRendererIsUsed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf png > \"$4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	canvas := &fakeCanvas{}
+	block := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}}}
+	if err := Draw(block, canvas, Options{Mermaid: mermaid.Renderer{Path: path}}); err != nil || !contains(canvas.calls, "diagram") {
+		t.Fatalf("err = %v, calls = %v", err, canvas.calls)
 	}
 }
