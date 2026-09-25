@@ -92,7 +92,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--no-page-numbers] [--paper size] [--margin length] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--force] [--no-page-numbers] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -125,6 +125,9 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
 	plan.Strict = f.strict
+	if err := checkOutputs(plan, f.force, fs); err != nil {
+		return Plan{}, err
+	}
 	if err := setLayout(&plan, f.paper, f.margin); err != nil {
 		return Plan{}, err
 	}
@@ -140,6 +143,7 @@ type flags struct {
 	author    string
 	noNumbers bool
 	strict    bool
+	force     bool
 	paper     string
 	margin    string
 	positions []string
@@ -180,6 +184,8 @@ func parseArgs(args []string) (flags, error) {
 			f.mermaid = args[i]
 		case "--strict":
 			f.strict = true
+		case "--force":
+			f.force = true
 		case "--no-page-numbers":
 			f.noNumbers = true
 		case "--paper":
@@ -351,4 +357,25 @@ func ParseLength(text string) (float64, error) {
 		return 0, fmt.Errorf("%q must be positive", text)
 	}
 	return number * factor, nil
+}
+
+// checkOutputs refuses an output that is also an input, and an existing output
+// that is not a PDF unless force is set. Overwriting an earlier PDF is the
+// normal repeated run and stays allowed.
+func checkOutputs(plan Plan, force bool, fs FileSystem) error {
+	for _, task := range plan.Tasks {
+		target := filepath.Clean(task.Target)
+		for _, source := range task.Sources {
+			if filepath.Clean(source) == target {
+				return fmt.Errorf("output %q is also an input", task.Target)
+			}
+		}
+		if force || strings.EqualFold(filepath.Ext(target), ".pdf") {
+			continue
+		}
+		if _, err := fs.Stat(task.Target); err == nil {
+			return fmt.Errorf("output %q exists and is not a PDF; use --force to overwrite", task.Target)
+		}
+	}
+	return nil
 }

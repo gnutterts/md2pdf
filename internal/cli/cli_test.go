@@ -300,5 +300,37 @@ func TestParseStrict(t *testing.T) {
 	}
 	if plan, err := Parse([]string{"--strict", "notes.md"}, fs); err != nil || !plan.Strict {
 		t.Fatalf("--strict: Strict=%v err=%v", plan.Strict, err)
+func TestParseProtectsExistingOutput(t *testing.T) {
+	fs := fakeFileSystem{
+		paths: map[string]bool{"notes.md": false, "other.md": false, "keep.txt": false, "old.pdf": false, "docs": true},
+		dirs:  map[string][]string{"docs": {"a.md", "b.md"}},
+	}
+	for _, test := range []struct {
+		name    string
+		args    []string
+		message string // empty means no error
+	}{
+		{"overwriting a PDF is normal", []string{"-o", "old.pdf", "notes.md"}, ""},
+		{"a new file is fine", []string{"-o", "new.txt", "notes.md"}, ""},
+		{"existing non-PDF is refused", []string{"-o", "keep.txt", "notes.md"}, "exists and is not a PDF"},
+		{"existing non-PDF with --force", []string{"--force", "-o", "keep.txt", "notes.md"}, ""},
+		{"the input itself", []string{"-o", "notes.md", "notes.md"}, "is also an input"},
+		{"the input itself, unnormalised", []string{"-o", "./notes.md", "notes.md"}, "is also an input"},
+		{"the input itself with --force", []string{"--force", "-o", "notes.md", "notes.md"}, "is also an input"},
+		{"a source of a merged directory", []string{"-o", "docs/a.md", "docs"}, "is also an input"},
+		{"existing non-PDF for a merged directory", []string{"-o", "keep.txt", "docs"}, "exists and is not a PDF"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse(test.args, fs)
+			if test.message == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("err = %v, want %q", err, test.message)
+			}
+		})
 	}
 }
