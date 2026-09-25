@@ -70,12 +70,21 @@ func LineHeight(size float64) float64 {
 type Options struct {
 	Mermaid mermaid.Renderer
 	Warn    func(message string)
+	// Strict turns every warning into an error: Draw stops at the first one and
+	// returns it.
+	Strict bool
+}
+
+// drawState is what drawing remembers between blocks.
+type drawState struct {
+	first bool
+	err   error // the first warning when Options.Strict is set
 }
 
 // Draw draws blocks in their original order.
 func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
-	first := true
-	for i := 0; i < len(blocks); {
+	state := &drawState{first: true}
+	for i := 0; i < len(blocks) && state.err == nil; {
 		block := blocks[i]
 		if block.Quote > 0 {
 			level := block.Quote
@@ -86,23 +95,29 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 			run := blocks[i:j]
 			canvas.Quote(level, func() {
 				for k, b := range run {
-					drawBlock(canvas, b, options, &first, listNeedsSpace(blocks, i+k))
+					if state.err != nil {
+						return
+					}
+					drawBlock(canvas, b, options, state, listNeedsSpace(blocks, i+k))
 				}
 			})
 			i = j
 			continue
 		}
-		drawBlock(canvas, block, options, &first, listNeedsSpace(blocks, i))
+		drawBlock(canvas, block, options, state, listNeedsSpace(blocks, i))
 		i++
+	}
+	if state.err != nil {
+		return state.err
 	}
 	return canvas.Err()
 }
 
 // drawBlock draws one block and marks it as handled.
-func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool, spaceAfter bool) {
+func drawBlock(canvas Canvas, block markdown.Block, options Options, state *drawState, spaceAfter bool) {
 	switch block.Kind {
 	case markdown.Heading:
-		if !*first {
+		if !state.first {
 			canvas.LineBreak(12)
 		}
 		base := baseStyle{family: "Helvetica", size: 11, bold: true}
@@ -178,7 +193,10 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 				break
 			}
 			canvas.Indent(-indent)
-			warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
+			state.warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
+			if state.err != nil {
+				return // strict: do not draw the fallback either
+			}
 		}
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
@@ -197,7 +215,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		canvas.Indent(-indent)
 		canvas.LineBreak(6)
 	}
-	*first = false
+	state.first = false
 }
 
 // listTextIndent is the distance from the left margin to the text of a list item.
@@ -252,7 +270,11 @@ func drawCodeBlock(canvas Canvas, lines []string) {
 	canvas.LineBreak(6)
 }
 
-func warn(options Options, message string) {
+// warn reports a warning; with Options.Strict it also becomes the error of Draw.
+func (state *drawState) warn(options Options, message string) {
+	if options.Strict && state.err == nil {
+		state.err = fmt.Errorf("%s (--strict)", message)
+	}
 	if options.Warn != nil {
 		options.Warn(message)
 	}

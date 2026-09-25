@@ -419,3 +419,49 @@ func TestHeadingsBecomeBookmarks(t *testing.T) {
 		t.Fatalf("bookmarks = %v, want %v", got, want)
 	}
 }
+
+func TestStrictTurnsAWarningIntoAnErrorAndStops(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	canvas := &fakeCanvas{}
+	warnings := 0
+	err := Draw(blocks, canvas, Options{Mermaid: mermaid.Renderer{Path: path}, Strict: true, Warn: func(string) { warnings++ }})
+	if err == nil || !strings.Contains(err.Error(), "could not draw mermaid diagram") || !strings.HasSuffix(err.Error(), "(--strict)") {
+		t.Fatalf("err = %v", err)
+	}
+	if warnings != 1 {
+		t.Fatalf("warnings = %d, want the warning to be reported once", warnings)
+	}
+	if contains(canvas.calls, "text:after:Helvetica::11") {
+		t.Fatalf("drawing went on after the strict error: %v", canvas.calls)
+	}
+	if contains(canvas.calls, "code:graph TD") {
+		t.Fatalf("the fallback code block was drawn although --strict failed the run: %v", canvas.calls)
+	}
+}
+
+func TestStrictStopsInsideAQuote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}, Quote: 1},
+		{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	canvas := &fakeCanvas{}
+	if err := Draw(blocks, canvas, Options{Mermaid: mermaid.Renderer{Path: path}, Strict: true}); err == nil {
+		t.Fatal("no error")
+	}
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "text:after") {
+			t.Fatalf("drawing went on after the strict error: %v", canvas.calls)
+		}
+	}
+}
