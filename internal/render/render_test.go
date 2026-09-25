@@ -627,3 +627,58 @@ func TestAHeadingAsksToKeepWithTheNextBlock(t *testing.T) {
 		}
 	}
 }
+
+func TestPrerenderRunsDiagramsAtTheSameTimeWithinTheLimit(t *testing.T) {
+	var calls, running, peak atomic.Int32
+	cache := NewDiagramCache(func(text string) ([]byte, error) {
+		calls.Add(1)
+		now := running.Add(1)
+		for {
+			old := peak.Load()
+			if now <= old || peak.CompareAndSwap(old, now) {
+				break
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+		running.Add(-1)
+		return []byte(text), nil
+	})
+	var texts []string
+	for i := 0; i < 8; i++ {
+		texts = append(texts, fmt.Sprintf("graph %d", i))
+	}
+	start := time.Now()
+	Prerender(cache, append(texts, texts[0], texts[1]), 4)
+	elapsed := time.Since(start)
+	if calls.Load() != 8 {
+		t.Fatalf("%d renders, want 8", calls.Load())
+	}
+	if peak.Load() > 4 || peak.Load() < 2 {
+		t.Fatalf("at most %d at the same time, want 2 to 4", peak.Load())
+	}
+	if elapsed > 1200*time.Millisecond {
+		t.Fatalf("took %v; eight renders of 200 ms in series take 1.6 s", elapsed)
+	}
+	// Drawing afterwards only reads the cache.
+	if _, err := cache("graph 3"); err != nil || calls.Load() != 8 {
+		t.Fatalf("a cached diagram was rendered again: calls = %d, err = %v", calls.Load(), err)
+	}
+}
+
+func TestAPanickingRendererBecomesAnError(t *testing.T) {
+	cache := NewDiagramCache(func(string) ([]byte, error) { panic("renderer exploded") })
+	Prerender(cache, []string{"graph TD"}, 2)
+	if _, err := cache("graph TD"); err == nil || !strings.Contains(err.Error(), "renderer exploded") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDiagramTextsAreDistinctAndInOrder(t *testing.T) {
+	mermaidBlock := func(lines ...string) markdown.Block {
+		return markdown.Block{Kind: markdown.CodeBlock, Language: "mermaid", Lines: lines}
+	}
+	blocks := []markdown.Block{mermaidBlock("b"), {Kind: markdown.CodeBlock, Language: "go", Lines: []string{"x"}}, mermaidBlock("a"), mermaidBlock("b")}
+	if got := DiagramTexts(blocks); fmt.Sprint(got) != "[b a]" {
+		t.Fatalf("got %q", got)
+	}
+}

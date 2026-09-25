@@ -6,6 +6,7 @@ package render
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -358,7 +359,61 @@ func NewDiagramCache(produce func(text string) ([]byte, error)) func(text string
 			entries[text] = entry
 		}
 		mutex.Unlock()
-		entry.once.Do(func() { entry.png, entry.err = produce(text) })
+		entry.once.Do(func() { entry.png, entry.err = safely(produce, text) })
 		return entry.png, entry.err
 	}
+}
+
+// safely calls produce and turns a panic into an error, so that a failing
+// renderer in a background goroutine cannot bring the program down.
+func safely(produce func(string) ([]byte, error), text string) (png []byte, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			png, err = nil, fmt.Errorf("diagram renderer failed: %v", recovered)
+		}
+	}()
+	return produce(text)
+}
+
+// DiagramTexts returns the distinct Mermaid diagram texts of blocks in
+// document order.
+func DiagramTexts(blocks []markdown.Block) []string {
+	seen := map[string]bool{}
+	var texts []string
+	for _, block := range blocks {
+		if block.Kind != markdown.CodeBlock || block.Language != "mermaid" {
+			continue
+		}
+		text := strings.Join(block.Lines, "\n")
+		if !seen[text] {
+			seen[text] = true
+			texts = append(texts, text)
+		}
+	}
+	return texts
+}
+
+// Workers is the number of diagrams rendered at the same time: at most four,
+// and no more than the processors this program may use.
+func Workers() int { return max(1, min(runtime.NumCPU(), runtime.GOMAXPROCS(0), 4)) }
+
+// Prerender renders texts through get with at most workers at a time. get is
+// meant to be a NewDiagramCache function: the results are kept there, and
+// drawing later only reads them. Errors are not returned here; drawing reports
+// them where each diagram appears.
+func Prerender(get func(string) ([]byte, error), texts []string, workers int) {
+	if workers < 1 {
+		workers = 1
+	}
+	slots := make(chan struct{}, workers)
+	var wait sync.WaitGroup
+	for _, text := range texts {
+		wait.Add(1)
+		slots <- struct{}{}
+		go func(text string) {
+			defer func() { <-slots; wait.Done() }()
+			_, _ = safely(get, text)
+		}(text)
+	}
+	wait.Wait()
 }
