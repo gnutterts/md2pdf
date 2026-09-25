@@ -184,7 +184,9 @@ func (v documentCanvas) Bookmark(title string, level int) {
 	}
 	d := v.d
 	if !v.rowFits(math.Max(15, d.font.size*1.35)) {
-		v.NewPage()
+		// Not NewPage: the heading style is already chosen and must keep its line height.
+		d.pdf.AddPage()
+		v.resetX()
 	}
 	for len(d.outline) > 0 && d.outline[len(d.outline)-1] >= level {
 		d.outline = d.outline[:len(d.outline)-1]

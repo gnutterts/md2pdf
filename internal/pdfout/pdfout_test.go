@@ -1161,3 +1161,33 @@ func TestHeadingKeepsItsLineHeightWhenTheFirstSpanIsCode(t *testing.T) {
 		t.Errorf("heading lines are %.2f apart, want 27", gap)
 	}
 }
+
+func TestHeadingPushedToANewPageKeepsItsLineHeight(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	for document.pdf.GetY() < 841.89-DefaultMargin-10 {
+		canvas.Text("filler")
+		canvas.LineBreak(15)
+	}
+	canvas.Style("Helvetica", true, false, 20) // heading base style
+	canvas.Bookmark("Heading", 1)              // does not fit: starts a new page
+	canvas.Style("Courier", true, false, 17)   // the first span is inline code
+	canvas.Text(strings.Repeat("code words ", 12))
+	target := filepath.Join(t.TempDir(), "pushed.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if len(streams) < 2 {
+		t.Fatalf("%d pages, want the heading on a second page", len(streams))
+	}
+	ys := lineBaselines(t, streams[len(streams)-1])
+	if len(ys) < 3 {
+		t.Fatalf("%d lines on the last page", len(ys))
+	}
+	if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+		t.Errorf("heading lines are %.2f apart, want 27", gap)
+	}
+}
