@@ -42,6 +42,8 @@ type Plan struct {
 	// Title and Author come from --title and --author; empty means unset.
 	Title  string
 	Author string
+	// MermaidTimeout is the raw --mermaid-timeout value; mermaid.ChooseTimeout validates it.
+	MermaidTimeout string
 	// Scale is the raw --scale value; mermaid.ChooseScale validates it.
 	Scale string
 	// Strict turns warnings into errors (--strict).
@@ -94,7 +96,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--force] [--no-page-numbers] [--scale n] [--paper size] [--margin length] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -127,6 +129,7 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
 	plan.Scale = f.scale
+	plan.MermaidTimeout = f.timeout
 	plan.Strict = f.strict
 	if err := checkOutputs(plan, f.force, fs); err != nil {
 		return Plan{}, err
@@ -146,6 +149,7 @@ type flags struct {
 	author    string
 	noNumbers bool
 	scale     string
+	timeout   string
 	strict    bool
 	force     bool
 	paper     string
@@ -196,6 +200,8 @@ func parseArgs(args []string) (flags, error) {
 			f.paper, err = value(&i, "--paper")
 		case "--margin":
 			f.margin, err = value(&i, "--margin")
+		case "--mermaid-timeout":
+			f.timeout, err = value(&i, "--mermaid-timeout")
 		case "--scale":
 			f.scale, err = value(&i, "--scale")
 		case "--title":

@@ -20,6 +20,9 @@ import (
 
 const defaultTimeout = 30 * time.Second
 
+// MaxPNGSize is the largest PNG that is accepted from the renderer, in bytes.
+const MaxPNGSize = 64 << 20
+
 // Renderer converts diagram text to a PNG with an external renderer.
 type Renderer struct {
 	Path    string        // path to or name of the renderer; empty means disabled
@@ -45,6 +48,23 @@ func Choose(flag, environment string) Renderer {
 		path = ""
 	}
 	return Renderer{Path: path}
+}
+
+// ChooseTimeout determines the time limit per diagram from flag and environment,
+// in that order; empty means 30 seconds. The value is a Go duration such as 45s.
+func ChooseTimeout(flag, environment string) (time.Duration, error) {
+	text := flag
+	if text == "" {
+		text = environment
+	}
+	if text == "" {
+		return defaultTimeout, nil
+	}
+	timeout, err := time.ParseDuration(strings.TrimSpace(text))
+	if err != nil || timeout <= 0 {
+		return 0, fmt.Errorf("timeout %q must be a positive duration such as 45s or 2m (--mermaid-timeout or MD2PDF_MERMAID_TIMEOUT)", text)
+	}
+	return timeout, nil
 }
 
 // DefaultScale is the device scale factor used when none is chosen: at scale 1 a
@@ -135,6 +155,9 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 		return nil, fmt.Errorf("mermaid renderer timed out: %w", ctx.Err())
 	}
 
+	if info, err := os.Stat(output); err == nil && info.Size() > MaxPNGSize {
+		return nil, fmt.Errorf("mermaid output is too large (%.1f MiB, limit %d MiB)", float64(info.Size())/(1<<20), int64(MaxPNGSize)>>20)
+	}
 	png, err := os.ReadFile(output)
 	if err != nil {
 		if os.IsNotExist(err) {
