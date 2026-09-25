@@ -19,7 +19,7 @@ import (
 )
 
 // DefaultMargin is the margin on every side in points.
-const DefaultMargin = 56.0
+const DefaultMargin = 64.0
 
 // Layout is the paper size and margin of a document.
 type Layout struct {
@@ -56,7 +56,10 @@ type Document struct {
 
 	font    fontStyle
 	fontSet bool
-	strike  bool
+	// lineSize is the largest font size chosen since the last line break; the
+	// height of a wrapped line follows it, not the smaller size of an inline span.
+	lineSize float64
+	strike   bool
 }
 
 // fontStyle remembers the last font chosen through Canvas.Style, without
@@ -148,6 +151,7 @@ func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 		style += "I"
 	}
 	v.d.font = fontStyle{family: family, style: style, size: size}
+	v.d.lineSize = max(v.d.lineSize, size)
 	v.d.fontSet = true
 	v.applyFont()
 }
@@ -191,14 +195,22 @@ func utf16Title(text string) string {
 	}
 	return string(encoded)
 }
-func (v documentCanvas) Text(s string) { v.d.pdf.Write(15, text.ToCP1252(s)) }
+
+// lineHeight is the height of a line of the block that is being written.
+func (v documentCanvas) lineHeight() float64 {
+	if v.d.lineSize <= 0 {
+		return render.LineHeight(0)
+	}
+	return render.LineHeight(v.d.lineSize)
+}
+func (v documentCanvas) Text(s string) { v.d.pdf.Write(v.lineHeight(), text.ToCP1252(s)) }
 func (v documentCanvas) Link(s, url string) {
 	r, g, b := v.d.pdf.GetTextColor()
 	v.d.pdf.SetTextColor(0, 70, 160)
 	if v.d.fontSet {
 		v.d.pdf.SetFont(v.d.font.family, v.styleString()+"U", v.d.font.size)
 	}
-	v.d.pdf.WriteLinkString(15, text.ToCP1252(s), url)
+	v.d.pdf.WriteLinkString(v.lineHeight(), text.ToCP1252(s), url)
 	if v.d.fontSet {
 		v.applyFont()
 	}
@@ -217,7 +229,7 @@ func (v documentCanvas) applyFont() {
 	}
 	v.d.pdf.SetFont(v.d.font.family, v.styleString(), v.d.font.size)
 }
-func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.resetX() }
+func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.d.lineSize = 0; v.resetX() }
 func (v documentCanvas) Indent(p float64) {
 	v.d.indent += p
 	v.d.pdf.SetLeftMargin(v.d.margin + v.d.indent)

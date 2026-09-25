@@ -343,6 +343,8 @@ func TestTextStyles(t *testing.T) {
 		{"heading level 2", markdown.Block{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Two"}}}, "text:Two:Helvetica:B:16"},
 		{"heading level 3", markdown.Block{Kind: markdown.Heading, Level: 3, Spans: []markdown.Span{{Text: "Three"}}}, "text:Three:Helvetica:B:13"},
 		{"heading level 4", markdown.Block{Kind: markdown.Heading, Level: 4, Spans: []markdown.Span{{Text: "Four"}}}, "text:Four:Helvetica:B:11"},
+		{"heading level 5", markdown.Block{Kind: markdown.Heading, Level: 5, Spans: []markdown.Span{{Text: "Five"}}}, "text:Five:Helvetica:BI:11"},
+		{"heading level 6", markdown.Block{Kind: markdown.Heading, Level: 6, Spans: []markdown.Span{{Text: "Six"}}}, "text:Six:Helvetica:I:11"},
 		{"bold paragraph", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "bold", Bold: true}}}, "text:bold:Helvetica:B:11"},
 		{"code in heading", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "code", Code: true}}}, "text:code:Courier:B:17"},
 		{"code in paragraph", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "code", Code: true}}}, "text:code:Courier::9.5"},

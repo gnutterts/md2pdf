@@ -2,7 +2,7 @@
 
 ## Supported Markdown
 
-- **Headings**, six levels, and **paragraphs**, including hard line breaks.
+- **Headings**, six levels (levels 4 to 6 are 11 point bold, bold italic and italic), and **paragraphs**, including hard line breaks.
 - **Inline formatting**: bold, italic, inline code, strike-through, backslash escapes, and HTML entities
   such as `&copy;` and `&#8594;`.
 - **Links** are blue, underlined, and clickable; bare URLs, `www.` addresses, and e-mail addresses become
