@@ -70,18 +70,14 @@ func (d *Document) SetPageNumbers(on bool) {
 		return
 	}
 	d.pdf.AliasNbPages("")
+	// fpdf saves and restores the font (with underline), the colours and the
+	// line width around the footer, so nothing is restored here.
 	d.pdf.SetFooterFunc(func() {
 		pdf := d.pdf
-		r, g, b := pdf.GetTextColor()
-		autoBreak, breakMargin := pdf.GetAutoPageBreak()
-		pdf.SetAutoPageBreak(false, breakMargin)
 		pdf.SetXY(margin, -margin/2-4)
 		pdf.SetFont("Helvetica", "", 9)
 		pdf.SetTextColor(128, 128, 128)
 		pdf.CellFormat(width-2*margin, 10, fmt.Sprintf("%d / {nb}", pdf.PageNo()), "", 0, "C", false, 0, "")
-		pdf.SetAutoPageBreak(autoBreak, breakMargin)
-		pdf.SetTextColor(r, g, b)
-		documentCanvas{d: d}.applyFont()
 	})
 }
 

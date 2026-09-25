@@ -814,6 +814,30 @@ func TestPageNumbersOffLeavesNoFooter(t *testing.T) {
 	}
 }
 
+func TestFooterDoesNotBreakTablesAcrossPages(t *testing.T) {
+	rows := []markdown.Row{{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "Head"}}}}}}
+	for i := 0; i < 120; i++ {
+		rows = append(rows, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "cell"}}}}})
+	}
+	document := New()
+	document.SetPageNumbers(true)
+	document.Canvas().Table(rows)
+	target := filepath.Join(t.TempDir(), "table.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	pages := pageCount(content)
+	if pages < 2 {
+		t.Fatalf("table fits on %d page", pages)
+	}
+	for i, stream := range contentStreams(t, content) {
+		if !bytes.Contains(stream, []byte(fmt.Sprintf("(%d / %d)", i+1, pages))) {
+			t.Errorf("page %d has no page number", i+1)
+		}
+	}
+}
+
 func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 	document := New()
 	document.SetPageNumbers(true)
@@ -827,13 +851,17 @@ func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 		t.Fatal(err)
 	}
 	content, _ := os.ReadFile(target)
-	second := string(contentStreams(t, content)[1])
+	streams := contentStreams(t, content)
+	if !strings.Contains(string(streams[0]), "0.502 0.502 0.502 rg") {
+		t.Fatal("the footer of page 1 is not grey; this test no longer checks anything")
+	}
+	second := string(streams[1])
 	at := strings.Index(second, "(after)")
 	if at < 0 {
 		t.Fatal("second page has no text")
 	}
 	before := second[:at]
-	if strings.Contains(before[strings.LastIndex(before, "BT"):], "0.500 g") {
+	if strings.Contains(before, "0.502 0.502 0.502 rg") {
 		t.Fatal("body text after the footer is still grey")
 	}
 }
