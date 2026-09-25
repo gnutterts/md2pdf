@@ -852,7 +852,7 @@ func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 	}
 	content, _ := os.ReadFile(target)
 	streams := contentStreams(t, content)
-	if !strings.Contains(string(streams[0]), "0.502 0.502 0.502 rg") {
+	if !strings.Contains(string(streams[0]), "0.502 g") {
 		t.Fatal("the footer of page 1 is not grey; this test no longer checks anything")
 	}
 	second := string(streams[1])
@@ -861,7 +861,7 @@ func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 		t.Fatal("second page has no text")
 	}
 	before := second[:at]
-	if strings.Contains(before, "0.502 0.502 0.502 rg") {
+	if strings.Contains(before, "0.502 g") {
 		t.Fatal("body text after the footer is still grey")
 	}
 }
