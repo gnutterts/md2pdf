@@ -364,8 +364,9 @@ func DiagramTexts(blocks []markdown.Block) []string {
 	return texts
 }
 
-// Workers is the number of diagrams rendered at the same time.
-func Workers() int { return max(1, min(runtime.NumCPU(), 4)) }
+// Workers is the number of diagrams rendered at the same time: at most four,
+// and no more than the processors this program may use.
+func Workers() int { return max(1, min(runtime.NumCPU(), runtime.GOMAXPROCS(0), 4)) }
 
 // Prerender renders texts through get with at most workers at a time. get is
 // meant to be a NewDiagramCache function: the results are kept there, and
