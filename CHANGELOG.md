@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 — 2026-09-26
+
+This release adds a table of contents.
+
+### Added
+
+- `--toc` starts the PDF with a *Contents* page that lists the headings with their page numbers; every entry
+  links to its heading. `--toc-depth` (1 to 6, default 3) sets the deepest heading level listed and implies
+  `--toc`. A merged directory gets one table; with `--separate`, every PDF gets its own. Because page numbers
+  are only known after layout, the document is drawn twice; diagrams are not rendered twice.
+
 ## 0.5.0 — 2026-09-26
 
 This release draws images, and stops diagrams from keeping you waiting.

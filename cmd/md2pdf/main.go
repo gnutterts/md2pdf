@@ -15,7 +15,7 @@ import (
 	"github.com/gnutterts/md2pdf/internal/runner"
 )
 
-const version = "md2pdf 0.5.0"
+const version = "md2pdf 0.6.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
