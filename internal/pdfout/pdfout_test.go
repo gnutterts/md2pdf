@@ -1117,3 +1117,77 @@ func TestLineHeightSurvivesALineBreakAndANewPage(t *testing.T) {
 		}
 	}
 }
+
+func TestParagraphAfterAHeadingKeepsItsOwnLineHeight(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	canvas.Text("Heading")
+	canvas.LineBreak(27)
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text(strings.Repeat("paragraph words ", 30))
+	target := filepath.Join(t.TempDir(), "after.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	ys := lineBaselines(t, contentStream(t, content))
+	for i := 2; i < len(ys); i++ {
+		if gap := ys[i-1] - ys[i]; gap < 14.99 || gap > 15.01 {
+			t.Errorf("paragraph lines %d and %d are %.2f apart, want 15", i, i+1, gap)
+		}
+	}
+}
+
+func TestHeadingKeepsItsLineHeightWhenTheFirstSpanIsCode(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("before")
+	canvas.LineBreak(15)
+	canvas.Style("Helvetica", true, false, 20) // the heading base style
+	canvas.Style("Courier", true, false, 17)   // its first span is inline code
+	canvas.Text(strings.Repeat("code words ", 12))
+	target := filepath.Join(t.TempDir(), "code.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	ys := lineBaselines(t, contentStream(t, content))
+	if len(ys) < 3 {
+		t.Fatalf("%d lines", len(ys))
+	}
+	if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+		t.Errorf("heading lines are %.2f apart, want 27", gap)
+	}
+}
+
+func TestHeadingPushedToANewPageKeepsItsLineHeight(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	for document.pdf.GetY() < 841.89-DefaultMargin-10 {
+		canvas.Text("filler")
+		canvas.LineBreak(15)
+	}
+	canvas.Style("Helvetica", true, false, 20) // heading base style
+	canvas.Bookmark("Heading", 1)              // does not fit: starts a new page
+	canvas.Style("Courier", true, false, 17)   // the first span is inline code
+	canvas.Text(strings.Repeat("code words ", 12))
+	target := filepath.Join(t.TempDir(), "pushed.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if len(streams) < 2 {
+		t.Fatalf("%d pages, want the heading on a second page", len(streams))
+	}
+	ys := lineBaselines(t, streams[len(streams)-1])
+	if len(ys) < 3 {
+		t.Fatalf("%d lines on the last page", len(ys))
+	}
+	if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+		t.Errorf("heading lines are %.2f apart, want 27", gap)
+	}
+}

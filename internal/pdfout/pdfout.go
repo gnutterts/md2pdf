@@ -60,7 +60,10 @@ type Document struct {
 	// page, starting from the font size then in use; the
 	// height of a wrapped line follows it, not the smaller size of an inline span.
 	lineSize float64
-	strike   bool
+	// fresh is true from a line break or a new page until the first Style or
+	// Text of the next line: that Style sets lineSize instead of raising it.
+	fresh  bool
+	strike bool
 }
 
 // fontStyle remembers the last font chosen through Canvas.Style, without
@@ -142,7 +145,11 @@ func (d *Document) Write(path string) error {
 
 type documentCanvas struct{ d *Document }
 
-func (v documentCanvas) NewPage() { v.d.pdf.AddPage(); v.d.lineSize = v.d.font.size; v.resetX() }
+func (v documentCanvas) NewPage() {
+	v.d.pdf.AddPage()
+	v.d.lineSize, v.d.fresh = v.d.font.size, true
+	v.resetX()
+}
 func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 	style := ""
 	if bold {
@@ -152,7 +159,11 @@ func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 		style += "I"
 	}
 	v.d.font = fontStyle{family: family, style: style, size: size}
-	v.d.lineSize = max(v.d.lineSize, size)
+	if v.d.fresh {
+		v.d.lineSize, v.d.fresh = size, false
+	} else {
+		v.d.lineSize = max(v.d.lineSize, size)
+	}
 	v.d.fontSet = true
 	v.applyFont()
 }
@@ -173,7 +184,9 @@ func (v documentCanvas) Bookmark(title string, level int) {
 	}
 	d := v.d
 	if !v.rowFits(math.Max(15, d.font.size*1.35)) {
-		v.NewPage()
+		// Not NewPage: the heading style is already chosen and must keep its line height.
+		d.pdf.AddPage()
+		v.resetX()
 	}
 	for len(d.outline) > 0 && d.outline[len(d.outline)-1] >= level {
 		d.outline = d.outline[:len(d.outline)-1]
@@ -204,13 +217,17 @@ func (v documentCanvas) lineHeight() float64 {
 	}
 	return render.LineHeight(v.d.lineSize)
 }
-func (v documentCanvas) Text(s string) { v.d.pdf.Write(v.lineHeight(), text.ToCP1252(s)) }
+func (v documentCanvas) Text(s string) {
+	v.d.fresh = false
+	v.d.pdf.Write(v.lineHeight(), text.ToCP1252(s))
+}
 func (v documentCanvas) Link(s, url string) {
 	r, g, b := v.d.pdf.GetTextColor()
 	v.d.pdf.SetTextColor(0, 70, 160)
 	if v.d.fontSet {
 		v.d.pdf.SetFont(v.d.font.family, v.styleString()+"U", v.d.font.size)
 	}
+	v.d.fresh = false
 	v.d.pdf.WriteLinkString(v.lineHeight(), text.ToCP1252(s), url)
 	if v.d.fontSet {
 		v.applyFont()
@@ -230,7 +247,11 @@ func (v documentCanvas) applyFont() {
 	}
 	v.d.pdf.SetFont(v.d.font.family, v.styleString(), v.d.font.size)
 }
-func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.d.lineSize = v.d.font.size; v.resetX() }
+func (v documentCanvas) LineBreak(h float64) {
+	v.d.pdf.Ln(h)
+	v.d.lineSize, v.d.fresh = v.d.font.size, true
+	v.resetX()
+}
 func (v documentCanvas) Indent(p float64) {
 	v.d.indent += p
 	v.d.pdf.SetLeftMargin(v.d.margin + v.d.indent)
