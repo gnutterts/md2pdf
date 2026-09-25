@@ -403,3 +403,16 @@ func TestParseTOC(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFontDirectories(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "Regular.ttf"), []byte{0, 1, 0, 0, 1, 2, 3}, 0o600)
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	plan, err := Parse([]string{"--font", dir, "--font-mono", dir, "notes.md"}, fs)
+	if err != nil || plan.Font != dir || plan.MonoFont != dir {
+		t.Fatalf("plan = %+v, err = %v", plan, err)
+	}
+	if _, err := Parse([]string{"--font", t.TempDir(), "notes.md"}, fs); err == nil || !strings.Contains(err.Error(), "Regular.ttf") {
+		t.Fatalf("an empty directory: err = %v", err)
+	}
+}

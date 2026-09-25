@@ -95,3 +95,11 @@ func TestTheScaleDefaultsToTwoAndTheFlagBeatsTheEnvironment(t *testing.T) {
 		t.Fatalf("flag: err = %v, Scale = %v", err, got)
 	}
 }
+
+func TestAFontDirectoryFromTheEnvironmentIsChecked(t *testing.T) {
+	t.Setenv("MD2PDF_FONT", t.TempDir())
+	err := runWith([]string{sourceFile(t)}, func(cli.Plan, render.Options) error { t.Fatal("executor called"); return nil })
+	if err == nil || !strings.Contains(err.Error(), "MD2PDF_FONT") {
+		t.Fatalf("err = %v", err)
+	}
+}

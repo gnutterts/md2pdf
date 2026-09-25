@@ -124,7 +124,7 @@ func build(plan cli.Plan, task cli.Task, options render.Options, read func(strin
 }
 
 func layout(plan cli.Plan) pdfout.Layout {
-	return pdfout.Layout{Paper: plan.Paper, Margin: plan.Margin}
+	return pdfout.Layout{Paper: plan.Paper, Margin: plan.Margin, Font: plan.Font, MonoFont: plan.MonoFont}
 }
 
 // buildWithTOC draws the document once to learn where the headings fall, then

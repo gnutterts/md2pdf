@@ -30,6 +30,11 @@ const DefaultMargin = 64.0
 type Layout struct {
 	Paper  string  // a3, a4, a5, letter or legal; empty means a4
 	Margin float64 // points on every side; 0 means DefaultMargin
+	// Font and MonoFont are directories with Regular.ttf and optionally
+	// Bold.ttf, Italic.ttf and BoldItalic.ttf, used instead of the embedded
+	// DejaVu fonts for text and for code. Empty means the embedded font.
+	Font     string
+	MonoFont string
 }
 
 // paperSizes are the page sizes in points that fpdf knows, portrait.
@@ -63,6 +68,8 @@ type Document struct {
 	outline []int
 	// fonts are the family and style keys registered with fpdf so far.
 	fonts map[string]bool
+	// fontDir and monoDir are Layout.Font and Layout.MonoFont.
+	fontDir, monoDir string
 	// headings are all headings drawn so far, for a table of contents.
 	headings []Heading
 
@@ -104,7 +111,7 @@ func NewWithLayout(layout Layout) *Document {
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
 	width, _ := pdf.GetPageSize()
-	d := &Document{pdf: pdf, margin: margin, width: width, fonts: map[string]bool{}}
+	d := &Document{pdf: pdf, margin: margin, width: width, fonts: map[string]bool{}, fontDir: layout.Font, monoDir: layout.MonoFont}
 	// Start with a UTF-8 font, so that fpdf treats every string as UTF-8.
 	d.setFont("Helvetica", "", 11)
 	return d
@@ -147,9 +154,12 @@ func (d *Document) SetPageNumbers(on bool) {
 // so a document only parses the fonts it draws with. U and S in style are
 // underline and strike-through, which fpdf draws itself.
 func (d *Document) setFont(family, style string, size float64) {
-	name := font.Sans
+	name, dir := font.Sans, d.fontDir
 	if strings.EqualFold(family, "Courier") || family == font.Mono {
-		name = font.Mono
+		name, dir = font.Mono, d.monoDir
+	}
+	if dir != "" {
+		name += "Custom" // a different family, so it never mixes with the embedded one
 	}
 	face := ""
 	if strings.Contains(style, "B") {
@@ -160,7 +170,13 @@ func (d *Document) setFont(family, style string, size float64) {
 	}
 	if key := name + face; !d.fonts[key] {
 		d.fonts[key] = true
-		data, err := font.Bytes(name, face)
+		var data []byte
+		var err error
+		if dir != "" {
+			data, err = font.FromDir(dir, face)
+		} else {
+			data, err = font.Bytes(name, face)
+		}
 		if err != nil {
 			d.pdf.SetError(err)
 			return

@@ -37,6 +37,7 @@ Latin, Greek and Cyrillic scripts, arrows, and many mathematical and other symbo
   those formats. An image inside a heading, a table cell or a link also shows its alt text.
 - Footnotes, definition lists, math, and emoji shortcodes appear as plain text.
 - Formatting from HTML (bold, alignment, colour) is not applied; only its text is kept.
-- Characters the fonts do not have, such as Chinese, Japanese, Korean or emoji, show as an empty box.
+- Characters the fonts do not have, such as Chinese, Japanese, Korean or emoji, show as an empty box; give
+  a font that has them with `--font` (see [Usage](usage.md#fonts)).
   Arabic and Hebrew are not shaped or set right to left.
 - Mermaid diagrams require a working external renderer.

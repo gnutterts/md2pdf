@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 
 	"github.com/gnutterts/md2pdf/internal/cli"
+	"github.com/gnutterts/md2pdf/internal/font"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
 	"github.com/gnutterts/md2pdf/internal/render"
 	"github.com/gnutterts/md2pdf/internal/runner"
@@ -59,6 +60,17 @@ func runWith(args []string, execute func(cli.Plan, render.Options) error) (err e
 	renderer := mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID"))
 	renderer.Scale = scale
 	renderer.Timeout = timeout
+	for _, choice := range []struct {
+		dir *string
+		env string
+	}{{&plan.Font, "MD2PDF_FONT"}, {&plan.MonoFont, "MD2PDF_FONT_MONO"}} {
+		if *choice.dir == "" && os.Getenv(choice.env) != "" {
+			*choice.dir = os.Getenv(choice.env)
+			if err := font.CheckDir(*choice.dir); err != nil {
+				return fmt.Errorf("%s: %w", choice.env, err)
+			}
+		}
+	}
 	plan.Creator = version
 	options := render.Options{
 		Strict:  plan.Strict,
