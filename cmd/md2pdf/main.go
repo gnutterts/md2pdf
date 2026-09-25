@@ -52,8 +52,13 @@ func runWith(args []string, execute func(cli.Plan, render.Options) error) (err e
 	if err != nil {
 		return err
 	}
+	timeout, err := mermaid.ChooseTimeout(plan.MermaidTimeout, os.Getenv("MD2PDF_MERMAID_TIMEOUT"))
+	if err != nil {
+		return err
+	}
 	renderer := mermaid.Choose(plan.Mermaid, os.Getenv("MD2PDF_MERMAID"))
 	renderer.Scale = scale
+	renderer.Timeout = timeout
 	plan.Creator = version
 	options := render.Options{
 		Strict:  plan.Strict,
