@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
@@ -41,12 +42,15 @@ type Canvas interface {
 	HangingIndent()
 	CodeBlock(lines []string)
 	Rule()
+	// Bookmark adds an entry to the outline of the PDF at the current position.
+	Bookmark(text string, level int)
 	// Table draws a complete table: the canvas determines column widths and
 	// page breaks, because only there are the font metrics known.
 	Table(rows []markdown.Row)
 	// Diagram draws a PNG at the full text width, preserving
 	// proportions, and starts on a new page when it no longer fits.
-	Diagram(png []byte) error
+	// scale is how many times larger than its size on the page the PNG was rendered.
+	Diagram(png []byte, scale float64) error
 	Err() error
 }
 
@@ -58,7 +62,8 @@ type baseStyle struct {
 	bold, italic bool
 }
 
-func heightFor(size float64) float64 {
+// LineHeight is the height of a line of text of the given font size in points.
+func LineHeight(size float64) float64 {
 	height := math.Round(size*1.35*2) / 2
 	return math.Max(lineHeight, height)
 }
@@ -67,12 +72,24 @@ func heightFor(size float64) float64 {
 type Options struct {
 	Mermaid mermaid.Renderer
 	Warn    func(message string)
+	// Diagram renders the text of a diagram to a PNG. When nil, Mermaid.ToPNG is used;
+	// NewDiagramCache makes a version that renders every distinct text once.
+	Diagram func(text string) ([]byte, error)
+	// Strict turns every warning into an error: Draw stops at the first one and
+	// returns it.
+	Strict bool
+}
+
+// drawState is what drawing remembers between blocks.
+type drawState struct {
+	first bool
+	err   error // the first warning when Options.Strict is set
 }
 
 // Draw draws blocks in their original order.
 func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
-	first := true
-	for i := 0; i < len(blocks); {
+	state := &drawState{first: true}
+	for i := 0; i < len(blocks) && state.err == nil; {
 		block := blocks[i]
 		if block.Quote > 0 {
 			level := block.Quote
@@ -83,26 +100,38 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 			run := blocks[i:j]
 			canvas.Quote(level, func() {
 				for k, b := range run {
-					drawBlock(canvas, b, options, &first, listNeedsSpace(blocks, i+k))
+					if state.err != nil {
+						return
+					}
+					drawBlock(canvas, b, options, state, listNeedsSpace(blocks, i+k))
 				}
 			})
 			i = j
 			continue
 		}
-		drawBlock(canvas, block, options, &first, listNeedsSpace(blocks, i))
+		drawBlock(canvas, block, options, state, listNeedsSpace(blocks, i))
 		i++
+	}
+	if state.err != nil {
+		return state.err
 	}
 	return canvas.Err()
 }
 
 // drawBlock draws one block and marks it as handled.
-func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool, spaceAfter bool) {
+func drawBlock(canvas Canvas, block markdown.Block, options Options, state *drawState, spaceAfter bool) {
 	switch block.Kind {
 	case markdown.Heading:
-		if !*first {
+		if !state.first {
 			canvas.LineBreak(12)
 		}
 		base := baseStyle{family: "Helvetica", size: 11, bold: true}
+		switch block.Level {
+		case 5:
+			base.italic = true
+		case 6:
+			base.bold, base.italic = false, true
+		}
 		if block.Level == 1 {
 			base.size = 20
 		}
@@ -115,8 +144,9 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
 		canvas.Style(base.family, base.bold, base.italic, base.size)
+		canvas.Bookmark(markdown.PlainText(block.Spans), block.Level)
 		spans(canvas, block.Spans, base)
-		canvas.LineBreak(heightFor(base.size))
+		canvas.LineBreak(LineHeight(base.size))
 		canvas.Indent(-indent)
 		canvas.LineBreak(6)
 	case markdown.Paragraph:
@@ -125,7 +155,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		canvas.Indent(indent)
 		canvas.Style(base.family, base.bold, base.italic, base.size)
 		spans(canvas, block.Spans, base)
-		canvas.LineBreak(heightFor(base.size))
+		canvas.LineBreak(LineHeight(base.size))
 		canvas.Indent(-indent)
 		canvas.LineBreak(6)
 	case markdown.ListItem:
@@ -149,7 +179,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 			canvas.HangingIndent()
 		}
 		spans(canvas, block.Spans, base)
-		canvas.LineBreak(heightFor(base.size))
+		canvas.LineBreak(LineHeight(base.size))
 		canvas.Indent(-indent)
 		if spaceAfter {
 			canvas.LineBreak(6)
@@ -158,9 +188,13 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		if block.Language == "mermaid" && options.Mermaid.Available() {
 			indent := continuationIndent(block)
 			canvas.Indent(indent)
-			png, err := options.Mermaid.ToPNG(strings.Join(block.Lines, "\n"))
+			produce := options.Diagram
+			if produce == nil {
+				produce = options.Mermaid.ToPNG
+			}
+			png, err := produce(strings.Join(block.Lines, "\n"))
 			if err == nil {
-				err = canvas.Diagram(png)
+				err = canvas.Diagram(png, options.Mermaid.Scale)
 			}
 			if err == nil {
 				canvas.LineBreak(6)
@@ -168,7 +202,10 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 				break
 			}
 			canvas.Indent(-indent)
-			warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
+			state.warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
+			if state.err != nil {
+				return // strict: do not draw the fallback either
+			}
 		}
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
@@ -187,7 +224,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		canvas.Indent(-indent)
 		canvas.LineBreak(6)
 	}
-	*first = false
+	state.first = false
 }
 
 // listTextIndent is the distance from the left margin to the text of a list item.
@@ -242,7 +279,11 @@ func drawCodeBlock(canvas Canvas, lines []string) {
 	canvas.LineBreak(6)
 }
 
-func warn(options Options, message string) {
+// warn reports a warning; with Options.Strict it also becomes the error of Draw.
+func (state *drawState) warn(options Options, message string) {
+	if options.Strict && state.err == nil {
+		state.err = fmt.Errorf("%s (--strict)", message)
+	}
 	if options.Warn != nil {
 		options.Warn(message)
 	}
@@ -264,4 +305,31 @@ func spans(canvas Canvas, spans []markdown.Span, base baseStyle) {
 		}
 	}
 	canvas.Strike(false)
+}
+
+type diagramEntry struct {
+	once sync.Once
+	png  []byte
+	err  error
+}
+
+// NewDiagramCache wraps produce so that every distinct diagram text is
+// rendered once, also when several goroutines ask for the same text at the same
+// time: the others wait for the first. Failures are remembered too: a broken
+// diagram does not cost its time limit again, although every place it appears
+// still gets a warning.
+func NewDiagramCache(produce func(text string) ([]byte, error)) func(text string) ([]byte, error) {
+	var mutex sync.Mutex
+	entries := map[string]*diagramEntry{}
+	return func(text string) ([]byte, error) {
+		mutex.Lock()
+		entry, ok := entries[text]
+		if !ok {
+			entry = &diagramEntry{}
+			entries[text] = entry
+		}
+		mutex.Unlock()
+		entry.once.Do(func() { entry.png, entry.err = produce(text) })
+		return entry.png, entry.err
+	}
 }

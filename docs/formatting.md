@@ -2,7 +2,7 @@
 
 ## Supported Markdown
 
-- **Headings**, six levels, and **paragraphs**, including hard line breaks.
+- **Headings**, six levels (levels 4 to 6 are 11 point bold, bold italic and italic), and **paragraphs**, including hard line breaks.
 - **Inline formatting**: bold, italic, inline code, strike-through, backslash escapes, and HTML entities
   such as `&copy;` and `&#8594;`.
 - **Links** are blue, underlined, and clickable; bare URLs, `www.` addresses, and e-mail addresses become
@@ -14,8 +14,10 @@
 - **Tables** with a bold header row, individually sized columns, a header row that repeats on every
   page, and formatting and links inside cells.
 - **Thematic breaks**.
+- **Page numbers** (`n / N`, centred in grey below the text); turn them off with `--no-page-numbers`.
+- **Bookmarks**: every heading becomes an entry in the outline of the PDF viewer.
 - **Mermaid diagrams**, rendered as images; see [Usage](usage.md#mermaid).
-- **Front matter** in YAML (`---`), TOML (`+++`), or a Pandoc title block (`%`) is left out of the PDF.
+- **Front matter** in YAML (`---`), TOML (`+++`), or a Pandoc title block (`%`) is left out of the PDF; its `title` and `author` become the document title and author.
 - **Raw HTML** contributes its text: `<br>` breaks the line, and the text of an HTML block — including
   `<img>` alt text and table cells — is kept. Comments, scripts, and styles are left out.
 

@@ -3,11 +3,16 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
@@ -23,6 +28,7 @@ type fakeCanvas struct {
 	calls  []string
 	style  activeStyle
 	tables [][]markdown.Row
+	scales []float64 // the scale of every diagram
 }
 
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
@@ -58,8 +64,15 @@ func (n *fakeCanvas) HangingIndent() { n.calls = append(n.calls, "hanging") }
 func (n *fakeCanvas) CodeBlock(r []string) {
 	n.calls = append(n.calls, "code:"+strings.Join(r, ","))
 }
-func (n *fakeCanvas) Diagram([]byte) error { n.calls = append(n.calls, "diagram"); return nil }
-func (n *fakeCanvas) Rule()                { n.calls = append(n.calls, "rule") }
+func (n *fakeCanvas) Diagram(_ []byte, scale float64) error {
+	n.calls = append(n.calls, "diagram")
+	n.scales = append(n.scales, scale)
+	return nil
+}
+func (n *fakeCanvas) Rule() { n.calls = append(n.calls, "rule") }
+func (n *fakeCanvas) Bookmark(text string, level int) {
+	n.calls = append(n.calls, fmt.Sprintf("bookmark:%d:%s", level, text))
+}
 func (n *fakeCanvas) Table(rows []markdown.Row) {
 	n.tables = append(n.tables, rows)
 	n.calls = append(n.calls, fmt.Sprintf("table:%d", len(rows)))
@@ -339,6 +352,8 @@ func TestTextStyles(t *testing.T) {
 		{"heading level 2", markdown.Block{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Two"}}}, "text:Two:Helvetica:B:16"},
 		{"heading level 3", markdown.Block{Kind: markdown.Heading, Level: 3, Spans: []markdown.Span{{Text: "Three"}}}, "text:Three:Helvetica:B:13"},
 		{"heading level 4", markdown.Block{Kind: markdown.Heading, Level: 4, Spans: []markdown.Span{{Text: "Four"}}}, "text:Four:Helvetica:B:11"},
+		{"heading level 5", markdown.Block{Kind: markdown.Heading, Level: 5, Spans: []markdown.Span{{Text: "Five"}}}, "text:Five:Helvetica:BI:11"},
+		{"heading level 6", markdown.Block{Kind: markdown.Heading, Level: 6, Spans: []markdown.Span{{Text: "Six"}}}, "text:Six:Helvetica:I:11"},
 		{"bold paragraph", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "bold", Bold: true}}}, "text:bold:Helvetica:B:11"},
 		{"code in heading", markdown.Block{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "code", Code: true}}}, "text:code:Courier:B:17"},
 		{"code in paragraph", markdown.Block{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "code", Code: true}}}, "text:code:Courier::9.5"},
@@ -391,4 +406,167 @@ func TestDrawListSpaceWhenQuoteLevelChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkOrder(t, canvas.calls, []string{"text:quoted:Helvetica:I:11", "end:6", "text:plain:Helvetica::11"})
+}
+
+func TestHeadingsBecomeBookmarks(t *testing.T) {
+	heading := func(level int, text string) markdown.Block {
+		return markdown.Block{Kind: markdown.Heading, Level: level, Spans: []markdown.Span{{Text: text, Bold: true}, {Text: " two", Code: true}}}
+	}
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{heading(1, "One"), heading(3, "Three"), heading(2, "Two")}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "bookmark:") {
+			got = append(got, call)
+		}
+	}
+	want := []string{"bookmark:1:One two", "bookmark:3:Three two", "bookmark:2:Two two"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bookmarks = %v, want %v", got, want)
+	}
+}
+
+func TestStrictTurnsAWarningIntoAnErrorAndStops(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	canvas := &fakeCanvas{}
+	warnings := 0
+	err := Draw(blocks, canvas, Options{Mermaid: mermaid.Renderer{Path: path}, Strict: true, Warn: func(string) { warnings++ }})
+	if err == nil || !strings.Contains(err.Error(), "could not draw mermaid diagram") || !strings.HasSuffix(err.Error(), "(--strict)") {
+		t.Fatalf("err = %v", err)
+	}
+	if warnings != 1 {
+		t.Fatalf("warnings = %d, want the warning to be reported once", warnings)
+	}
+	if contains(canvas.calls, "text:after:Helvetica::11") {
+		t.Fatalf("drawing went on after the strict error: %v", canvas.calls)
+	}
+	if contains(canvas.calls, "code:graph TD") {
+		t.Fatalf("the fallback code block was drawn although --strict failed the run: %v", canvas.calls)
+	}
+}
+
+func TestStrictStopsInsideAQuote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}, Quote: 1},
+		{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	canvas := &fakeCanvas{}
+	if err := Draw(blocks, canvas, Options{Mermaid: mermaid.Renderer{Path: path}, Strict: true}); err == nil {
+		t.Fatal("no error")
+	}
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "text:after") {
+			t.Fatalf("drawing went on after the strict error: %v", canvas.calls)
+		}
+	}
+}
+
+func TestDiagramsAreDrawnWithTheRendererScale(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf png > \"$4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	canvas := &fakeCanvas{}
+	block := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}}}
+	if err := Draw(block, canvas, Options{Mermaid: mermaid.Renderer{Path: path, Scale: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(canvas.scales) != 1 || canvas.scales[0] != 2 {
+		t.Fatalf("scales = %v, want [2]", canvas.scales)
+	}
+}
+
+func TestTheDiagramCacheRendersEachTextOnce(t *testing.T) {
+	calls := map[string]int{}
+	cache := NewDiagramCache(func(text string) ([]byte, error) { calls[text]++; return []byte("png:" + text), nil })
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}},
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "A-->B"}},
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD", "C-->D"}},
+	}
+	canvas := &fakeCanvas{}
+	if err := Draw(blocks, canvas, Options{Mermaid: mermaid.Renderer{Path: "unused"}, Diagram: cache}); err != nil {
+		t.Fatal(err)
+	}
+	if calls["graph TD\nA-->B"] != 1 || calls["graph TD\nC-->D"] != 1 || len(calls) != 2 {
+		t.Fatalf("calls = %v, want one per distinct text", calls)
+	}
+	if n := len(canvas.scales); n != 3 {
+		t.Fatalf("%d diagrams drawn, want 3", n)
+	}
+}
+
+func TestTheDiagramCacheRemembersAFailureButEveryPlaceWarns(t *testing.T) {
+	calls := 0
+	cache := NewDiagramCache(func(string) ([]byte, error) { calls++; return nil, errors.New("broken") })
+	blocks := []markdown.Block{
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}},
+		{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}},
+	}
+	warnings := 0
+	err := Draw(blocks, &fakeCanvas{}, Options{Mermaid: mermaid.Renderer{Path: "unused"}, Diagram: cache, Warn: func(string) { warnings++ }})
+	if err != nil || calls != 1 || warnings != 2 {
+		t.Fatalf("err = %v, calls = %d, warnings = %d, want nil, 1, 2", err, calls, warnings)
+	}
+}
+
+func TestWithoutADiagramFunctionTheRendererIsUsed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "renderer")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf png > \"$4\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	canvas := &fakeCanvas{}
+	block := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}}}
+	if err := Draw(block, canvas, Options{Mermaid: mermaid.Renderer{Path: path}}); err != nil || !contains(canvas.calls, "diagram") {
+		t.Fatalf("err = %v, calls = %v", err, canvas.calls)
+	}
+}
+
+func TestTheDiagramCacheRendersOnceUnderConcurrency(t *testing.T) {
+	var calls atomic.Int32
+	release := make(chan struct{})
+	cache := NewDiagramCache(func(text string) ([]byte, error) {
+		calls.Add(1)
+		<-release // hold the first render until every goroutine is waiting
+		return []byte("png:" + text), nil
+	})
+	const goroutines = 16
+	var wait sync.WaitGroup
+	results := make([]string, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			png, err := cache("graph TD")
+			if err != nil {
+				t.Error(err)
+			}
+			results[i] = string(png)
+		}()
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wait.Wait()
+	if calls.Load() != 1 {
+		t.Fatalf("%d renders, want 1", calls.Load())
+	}
+	for i, result := range results {
+		if result != "png:graph TD" {
+			t.Errorf("goroutine %d got %q", i, result)
+		}
+	}
 }

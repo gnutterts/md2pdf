@@ -12,7 +12,8 @@ Run the tests:
 go test ./...
 ```
 
-The test suite does not require Mermaid CLI; it uses a fake renderer.
+The test suite does not require Mermaid CLI; it uses a fake renderer. CI also runs the tests with the race
+detector and fails when `go.mod` or `go.sum` is not tidy (`go mod tidy -diff`).
 
 ## Dependency updates
 

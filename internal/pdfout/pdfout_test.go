@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
@@ -31,7 +32,7 @@ func TestDiagramPNG(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := New()
-	if err := document.Canvas().Diagram(pngBytes.Bytes()); err != nil {
+	if err := document.Canvas().Diagram(pngBytes.Bytes(), 1); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "diagram.pdf")
@@ -49,7 +50,7 @@ func TestDiagramPNG(t *testing.T) {
 
 func TestDiagramInvalidPNGReturnsError(t *testing.T) {
 	document := New()
-	if err := document.Canvas().Diagram([]byte("not PNG")); err == nil {
+	if err := document.Canvas().Diagram([]byte("not PNG"), 1); err == nil {
 		t.Fatal("invalid PNG did not return an error")
 	}
 }
@@ -104,7 +105,7 @@ func TestTaskCheckboxWritesBox(t *testing.T) {
 	}
 }
 
-func TestQuoteDrawsLineAtSixty(t *testing.T) {
+func TestQuoteBarSitsInTheGutter(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "quote.pdf")
 	document := New()
 	canvas := document.Canvas()
@@ -119,9 +120,10 @@ func TestQuoteDrawsLineAtSixty(t *testing.T) {
 		t.Fatal(err)
 	}
 	stream := contentStream(t, content)
-	line := regexp.MustCompile(`60\.00 [0-9]+\.[0-9]+ m 60\.00 [0-9]+\.[0-9]+ l S`)
+	bar := fmt.Sprintf("%.2f", DefaultMargin+4) // the bar sits 4 points right of the margin
+	line := regexp.MustCompile(bar + ` [0-9]+\.[0-9]+ m ` + bar + ` [0-9]+\.[0-9]+ l S`)
 	if !line.Match(stream) {
-		t.Fatalf("quote has no vertical line at x = 60: %q", stream)
+		t.Fatalf("quote has no vertical line at x = %s: %q", bar, stream)
 	}
 }
 
@@ -149,7 +151,8 @@ func TestQuoteLineSpansPageBreak(t *testing.T) {
 	if len(streams) != 2 {
 		t.Fatalf("quote has %d content streams, want 2", len(streams))
 	}
-	line := regexp.MustCompile(`60\.00 [0-9]+\.[0-9]+ m 60\.00 [0-9]+\.[0-9]+ l S`)
+	bar := fmt.Sprintf("%.2f", DefaultMargin+4)
+	line := regexp.MustCompile(bar + ` [0-9]+\.[0-9]+ m ` + bar + ` [0-9]+\.[0-9]+ l S`)
 	for i, stream := range streams {
 		if !line.Match(stream) {
 			t.Fatalf("page %d has no quote line: %q", i+1, stream)
@@ -593,7 +596,7 @@ func TestDiagramTallerThanOnePageIsScaled(t *testing.T) {
 	if err := png.Encode(&pngBytes, narrowAndTall); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Canvas().Diagram(pngBytes.Bytes()); err != nil {
+	if err := document.Canvas().Diagram(pngBytes.Bytes(), 1); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "diagram.pdf")
@@ -716,5 +719,595 @@ func TestCheckboxSitsOnItsTextLine(t *testing.T) {
 	boxTop := pageHeight - pdfY
 	if boxTop < lineTop || boxTop+8 > lineTop+15 {
 		t.Fatalf("checkbox spans %.2f to %.2f, want inside the line %.2f to %.2f", boxTop, boxTop+8, lineTop, lineTop+15)
+	}
+}
+
+// infoString reads a string from the PDF information dictionary; fpdf writes
+// UTF-8 strings as UTF-16BE with a byte order mark.
+func infoString(t *testing.T, pdf []byte, key string) (string, bool) {
+	t.Helper()
+	marker := []byte("/" + key + " (\xfe\xff")
+	at := bytes.Index(pdf, marker)
+	if at < 0 {
+		return "", false
+	}
+	raw := pdf[at+len(marker):]
+	raw = raw[:bytes.IndexByte(raw, ')')]
+	var out []rune
+	for i := 0; i+1 < len(raw); i += 2 {
+		out = append(out, rune(raw[i])<<8|rune(raw[i+1]))
+	}
+	return string(out), true
+}
+
+func TestSetInfoWritesTitleAuthorAndCreator(t *testing.T) {
+	document := New()
+	document.SetInfo("Café notes", "", "md2pdf test")
+	target := filepath.Join(t.TempDir(), "info.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := infoString(t, content, "Title"); !ok || got != "Café notes" {
+		t.Fatalf("Title = %q, %v", got, ok)
+	}
+	if got, ok := infoString(t, content, "Creator"); !ok || got != "md2pdf test" {
+		t.Fatalf("Creator = %q, %v", got, ok)
+	}
+	if _, ok := infoString(t, content, "Author"); ok {
+		t.Fatal("an empty author must not be written")
+	}
+}
+
+func TestPageNumbersAppearInTheFooter(t *testing.T) {
+	document := New()
+	document.SetPageNumbers(true)
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("first")
+	canvas.NewPage()
+	canvas.Text("second")
+	canvas.NewPage()
+	canvas.Text("third")
+	target := filepath.Join(t.TempDir(), "numbers.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams := contentStreams(t, content)
+	if len(streams) != 3 {
+		t.Fatalf("%d content streams, want 3", len(streams))
+	}
+	for i, stream := range streams {
+		want := fmt.Sprintf("(%d / 3)", i+1)
+		if !bytes.Contains(stream, []byte(want)) {
+			t.Errorf("page %d has no %s", i+1, want)
+		}
+		// The footer sits in the bottom margin, below the text area (which ends 56 points above the edge).
+		y := regexp.MustCompile(`BT [\d.]+ ([\d.]+) Td \(\d / 3\)`).FindSubmatch(stream)
+		if y == nil {
+			t.Fatalf("page %d: no footer position", i+1)
+		}
+		value, _ := strconv.ParseFloat(string(y[1]), 64)
+		if value < 8 || value > DefaultMargin/2+4 {
+			t.Errorf("page %d: footer baseline at y=%v, want between 8 points and half the margin above the bottom edge, below the text area", i+1, value)
+		}
+	}
+}
+
+func TestPageNumbersOffLeavesNoFooter(t *testing.T) {
+	document := New()
+	document.SetPageNumbers(false)
+	document.Canvas().NewPage()
+	target := filepath.Join(t.TempDir(), "plain.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	for _, stream := range contentStreams(t, content) {
+		if bytes.Contains(stream, []byte(" / 2)")) {
+			t.Fatal("footer present although page numbers are off")
+		}
+	}
+}
+
+func TestFooterDoesNotBreakTablesAcrossPages(t *testing.T) {
+	rows := []markdown.Row{{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "Head"}}}}}}
+	for i := 0; i < 120; i++ {
+		rows = append(rows, markdown.Row{Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "cell"}}}}})
+	}
+	document := New()
+	document.SetPageNumbers(true)
+	document.Canvas().Table(rows)
+	target := filepath.Join(t.TempDir(), "table.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	pages := pageCount(content)
+	if pages < 2 {
+		t.Fatalf("table fits on %d page", pages)
+	}
+	for i, stream := range contentStreams(t, content) {
+		if !bytes.Contains(stream, []byte(fmt.Sprintf("(%d / %d)", i+1, pages))) {
+			t.Errorf("page %d has no page number", i+1)
+		}
+	}
+}
+
+func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
+	document := New()
+	document.SetPageNumbers(true)
+	canvas := document.Canvas()
+	canvas.Style("Courier", true, false, 14)
+	canvas.Text("before")
+	canvas.NewPage()
+	canvas.Text("after")
+	target := filepath.Join(t.TempDir(), "font.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if !strings.Contains(string(streams[0]), "0.502 g") {
+		t.Fatal("the footer of page 1 is not grey; this test no longer checks anything")
+	}
+	second := string(streams[1])
+	at := strings.Index(second, "(after)")
+	if at < 0 {
+		t.Fatal("second page has no text")
+	}
+	before := second[:at]
+	if strings.Contains(before, "0.502 g") {
+		t.Fatal("body text after the footer is still grey")
+	}
+}
+
+// outlineTitles decodes the UTF-16 titles of the outline entries in document order.
+func outlineTitles(content []byte) []string {
+	var titles []string
+	marker := []byte("/Title (\xfe\xff")
+	for rest := content; ; {
+		at := bytes.Index(rest, marker)
+		if at < 0 {
+			return titles
+		}
+		raw := rest[at+len(marker):]
+		raw = raw[:bytes.IndexByte(raw, ')')]
+		var units []uint16
+		for i := 0; i+1 < len(raw); i += 2 {
+			units = append(units, uint16(raw[i])<<8|uint16(raw[i+1]))
+		}
+		titles = append(titles, string(utf16.Decode(units)))
+		rest = rest[at+len(marker):]
+	}
+}
+
+func TestBookmarksFormAContiguousOutline(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	for _, heading := range []struct {
+		title string
+		level int
+	}{{"First", 3}, {"Deep", 5}, {"Back", 1}, {"Again", 3}} {
+		canvas.Bookmark(heading.title, heading.level)
+		canvas.Text(heading.title)
+		canvas.LineBreak(20)
+	}
+	target := filepath.Join(t.TempDir(), "outline.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(content, []byte("/Outlines")) {
+		t.Fatal("no outline in the PDF")
+	}
+	// Levels 3, 5, 1, 3 become depths 0, 1, 0, 1: two top entries with one child each.
+	if got, want := outlineTitles(content), []string{"First", "Deep", "Back", "Again"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("outline titles = %v, want %v", got, want)
+	}
+	// fpdf writes /First for the outline root and for every entry that has children.
+	if n := bytes.Count(content, []byte("/First ")); n != 3 {
+		t.Fatalf("%d /First references, want 3 (the root and two parents)", n)
+	}
+}
+
+func TestBookmarkTitlesKeepTheirCharacters(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	canvas.Bookmark("Cost: \u20ac5 \u2014 \u201cquoted\u201d \u2122 caf\u00e9 \u0416", 1)
+	target := filepath.Join(t.TempDir(), "unicode.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	want := "Cost: \u20ac5 \u2014 \u201cquoted\u201d \u2122 caf\u00e9 \u0416"
+	if got := outlineTitles(content); len(got) != 1 || got[0] != want {
+		t.Fatalf("outline titles = %q, want %q", got, want)
+	}
+}
+
+func TestBookmarkAtTheBottomStartsOnTheNextPage(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	for document.pdf.GetY() < 841.89-DefaultMargin-20 { // stop just above the bottom margin
+		canvas.Text("filler")
+		canvas.LineBreak(27)
+	}
+	canvas.Bookmark("Late", 1)
+	canvas.Text("Late")
+	target := filepath.Join(t.TempDir(), "late.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	dests := regexp.MustCompile(`/Dest \[(\d+) 0 R /XYZ`).FindSubmatch(content)
+	if dests == nil {
+		t.Fatal("no bookmark destination")
+	}
+	// The heading text is on the last page; the destination must be that page object.
+	last := regexp.MustCompile(`(\d+) 0 obj\n<</Type /Page\n`).FindAllSubmatch(content, -1)
+	if len(last) < 2 || string(dests[1]) != string(last[len(last)-1][1]) {
+		t.Fatalf("bookmark points at page object %s, the heading is on %s", dests[1], last[len(last)-1][1])
+	}
+}
+
+func TestBookmarkOnSecondPageTargetsThatPage(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Bookmark("Early", 1)
+	canvas.NewPage()
+	canvas.Bookmark("Late", 1)
+	target := filepath.Join(t.TempDir(), "dest.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	dests := regexp.MustCompile(`/Dest \[(\d+) 0 R /XYZ`).FindAllSubmatch(content, -1)
+	if len(dests) != 2 || string(dests[0][1]) == string(dests[1][1]) {
+		t.Fatalf("both bookmarks point at the same page: %q", dests)
+	}
+}
+
+func TestLayoutSetsPaperAndMargin(t *testing.T) {
+	document := NewWithLayout(Layout{Paper: "Letter", Margin: 36})
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("left edge")
+	canvas.LineBreak(15)
+	canvas.Rule()
+	target := filepath.Join(t.TempDir(), "letter.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	if !bytes.Contains(content, []byte("/MediaBox [0 0 612.00 792.00]")) {
+		t.Fatalf("page is not Letter: %s", regexp.MustCompile(`/MediaBox \[[^\]]*\]`).Find(content))
+	}
+	stream := contentStream(t, content)
+	columns := textColumns(t, stream)
+	if len(columns) == 0 || columns[0] < 38.7 || columns[0] > 39 {
+		t.Fatalf("text starts at x=%v, want the 36 point margin plus fpdf's 2.83 point cell margin", columns)
+	}
+	// The rule runs from the left margin to the right margin: 36 .. 612-36.
+	if !regexp.MustCompile(`36\.00 [\d.]+ m 576\.00 [\d.]+ l S`).Match(stream) {
+		t.Fatalf("rule does not run from 36 to 576:\n%s", stream)
+	}
+}
+
+func TestDefaultLayoutIsA4WithTheDefaultMargin(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("x")
+	target := filepath.Join(t.TempDir(), "a4.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	if !bytes.Contains(content, []byte("/MediaBox [0 0 595.28 841.89]")) {
+		t.Fatal("default page is not A4")
+	}
+	if columns := textColumns(t, contentStream(t, content)); len(columns) == 0 || columns[0] < DefaultMargin+2.7 || columns[0] > DefaultMargin+3 {
+		t.Fatalf("text starts at %v, want %v plus fpdf's 2.83 point cell margin", columns, DefaultMargin)
+	}
+}
+
+// lineBaselines reads the y position of every text placement in a content stream.
+func lineBaselines(t *testing.T, stream []byte) []float64 {
+	t.Helper()
+	var ys []float64
+	for _, match := range regexp.MustCompile(`BT [\d.]+ ([\d.]+) Td \(`).FindAllSubmatch(stream, -1) {
+		y, err := strconv.ParseFloat(string(match[1]), 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ys = append(ys, y)
+	}
+	return ys
+}
+
+func TestWrappedLinesFollowTheFontSize(t *testing.T) {
+	for _, test := range []struct {
+		size float64
+		want float64
+	}{{20, 27}, {16, 21.5}, {11, 15}} {
+		document := New()
+		canvas := document.Canvas()
+		canvas.Style("Helvetica", true, false, test.size)
+		canvas.Text(strings.Repeat("wrapping words ", 30)) // several lines
+		target := filepath.Join(t.TempDir(), "wrap.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatal(err)
+		}
+		content, _ := os.ReadFile(target)
+		ys := lineBaselines(t, contentStream(t, content))
+		if len(ys) < 3 {
+			t.Fatalf("size %v: %d lines, want several", test.size, len(ys))
+		}
+		for i := 1; i < len(ys); i++ {
+			if gap := ys[i-1] - ys[i]; gap < test.want-0.01 || gap > test.want+0.01 {
+				t.Errorf("size %v: lines %d and %d are %.2f apart, want %.2f", test.size, i, i+1, gap, test.want)
+			}
+		}
+	}
+}
+
+func TestInlineCodeDoesNotShrinkTheLineHeightOfAHeading(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	canvas.Text(strings.Repeat("heading words ", 12))
+	canvas.Style("Courier", true, false, 17)
+	canvas.Text(strings.Repeat("code words ", 12))
+	target := filepath.Join(t.TempDir(), "mixed.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	ys := lineBaselines(t, contentStream(t, content))
+	for i := 1; i < len(ys); i++ {
+		// fpdf puts the baseline at 0.5*height + 0.3*size, so a smaller run on the same
+		// line sits up to 0.3*(20-17) = 0.9 points higher; the line spacing itself is 27.
+		if gap := ys[i-1] - ys[i]; gap < 26 || gap > 28 {
+			t.Errorf("lines %d and %d are %.2f apart, want about 27 for a size 20 heading", i, i+1, gap)
+		}
+	}
+}
+
+func TestLineHeightSurvivesALineBreakAndANewPage(t *testing.T) {
+	for _, reset := range []struct {
+		name string
+		do   func(render.Canvas)
+	}{
+		{"line break", func(c render.Canvas) { c.LineBreak(27) }},
+		{"new page", func(c render.Canvas) { c.NewPage() }},
+	} {
+		document := New()
+		canvas := document.Canvas()
+		canvas.Style("Helvetica", true, false, 20)
+		canvas.Text("first")
+		reset.do(canvas)
+		canvas.Text(strings.Repeat("wrapping words ", 30)) // no new Style call: still size 20
+		target := filepath.Join(t.TempDir(), "reset.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatal(err)
+		}
+		content, _ := os.ReadFile(target)
+		streams := contentStreams(t, content)
+		ys := lineBaselines(t, streams[len(streams)-1])
+		if len(ys) < 3 {
+			t.Fatalf("%s: %d lines, want several", reset.name, len(ys))
+		}
+		if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+			t.Errorf("%s: lines are %.2f apart, want 27", reset.name, gap)
+		}
+	}
+}
+
+func TestParagraphAfterAHeadingKeepsItsOwnLineHeight(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	canvas.Text("Heading")
+	canvas.LineBreak(27)
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text(strings.Repeat("paragraph words ", 30))
+	target := filepath.Join(t.TempDir(), "after.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	ys := lineBaselines(t, contentStream(t, content))
+	for i := 2; i < len(ys); i++ {
+		if gap := ys[i-1] - ys[i]; gap < 14.99 || gap > 15.01 {
+			t.Errorf("paragraph lines %d and %d are %.2f apart, want 15", i, i+1, gap)
+		}
+	}
+}
+
+func TestHeadingKeepsItsLineHeightWhenTheFirstSpanIsCode(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("before")
+	canvas.LineBreak(15)
+	canvas.Style("Helvetica", true, false, 20) // the heading base style
+	canvas.Style("Courier", true, false, 17)   // its first span is inline code
+	canvas.Text(strings.Repeat("code words ", 12))
+	target := filepath.Join(t.TempDir(), "code.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	ys := lineBaselines(t, contentStream(t, content))
+	if len(ys) < 3 {
+		t.Fatalf("%d lines", len(ys))
+	}
+	if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+		t.Errorf("heading lines are %.2f apart, want 27", gap)
+	}
+}
+
+func TestHeadingPushedToANewPageKeepsItsLineHeight(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	for document.pdf.GetY() < 841.89-DefaultMargin-10 {
+		canvas.Text("filler")
+		canvas.LineBreak(15)
+	}
+	canvas.Style("Helvetica", true, false, 20) // heading base style
+	canvas.Bookmark("Heading", 1)              // does not fit: starts a new page
+	canvas.Style("Courier", true, false, 17)   // the first span is inline code
+	canvas.Text(strings.Repeat("code words ", 12))
+	target := filepath.Join(t.TempDir(), "pushed.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if len(streams) < 2 {
+		t.Fatalf("%d pages, want the heading on a second page", len(streams))
+	}
+	ys := lineBaselines(t, streams[len(streams)-1])
+	if len(ys) < 3 {
+		t.Fatalf("%d lines on the last page", len(ys))
+	}
+	if gap := ys[len(ys)-2] - ys[len(ys)-1]; gap < 26.99 || gap > 27.01 {
+		t.Errorf("heading lines are %.2f apart, want 27", gap)
+	}
+}
+
+func TestDeepNestingKeepsAReadableTextWidth(t *testing.T) {
+	const levels = 40
+	var list, quote []markdown.Block
+	for depth := 0; depth < levels; depth++ {
+		list = append(list, markdown.Block{Kind: markdown.ListItem, Depth: depth, Spans: []markdown.Span{{Text: "item " + strings.Repeat("word ", 12)}}})
+	}
+	for level := 1; level <= levels; level++ {
+		quote = append(quote, markdown.Block{Kind: markdown.Paragraph, Quote: level, Spans: []markdown.Span{{Text: "quote " + strings.Repeat("word ", 12)}}})
+	}
+	code := markdown.Block{Kind: markdown.CodeBlock, Depth: levels, InItem: true, Lines: []string{strings.Repeat("x", 300)}}
+	table := markdown.Block{Kind: markdown.Table, Depth: levels, InItem: true, Rows: []markdown.Row{{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "head"}}}}}, {Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("cell ", 10)}}}}}}}
+	limit := 595.28 - DefaultMargin - minTextWidth + 4.5 // the widest left edge of text plus the table cell padding
+	for name, blocks := range map[string][]markdown.Block{"list": list, "quote": quote, "code in a list": {code}, "table in a list": {table}} {
+		document := New()
+		if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		target := filepath.Join(t.TempDir(), "deep.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		content, _ := os.ReadFile(target)
+		columns := textColumns(t, contentStream(t, content))
+		if len(columns) == 0 {
+			t.Fatalf("%s: no text", name)
+		}
+		for _, x := range columns {
+			if x > limit {
+				t.Errorf("%s: text starts at x=%.1f, beyond %.1f", name, x, limit)
+				break
+			}
+		}
+	}
+}
+
+func TestQuoteBarsStayLeftOfTheTextUnderDeepNesting(t *testing.T) {
+	var blocks []markdown.Block
+	for level := 1; level <= 40; level++ {
+		blocks = append(blocks, markdown.Block{Kind: markdown.Paragraph, Quote: level, Spans: []markdown.Span{{Text: "quote text"}}})
+	}
+	document := New()
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "bars.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	stream := contentStream(t, content)
+	bars := regexp.MustCompile(`([\d.]+) [\d.]+ m ([\d.]+) [\d.]+ l S`).FindAllSubmatch(stream, -1)
+	if len(bars) == 0 {
+		t.Fatal("no quote bars")
+	}
+	deepest := 0.0
+	for _, bar := range bars {
+		x, _ := strconv.ParseFloat(string(bar[1]), 64)
+		deepest = max(deepest, x)
+	}
+	// The text of the deepest levels starts at the cap; a bar there would run through it.
+	capX := DefaultMargin + New().maxIndent()
+	if deepest >= capX {
+		t.Errorf("a quote bar at x=%.1f reaches the text column at the cap (x=%.1f)", deepest, capX)
+	}
+}
+
+func TestIndentingBackIsExactAfterCapping(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	for i := 0; i < 50; i++ {
+		canvas.Indent(14)
+	}
+	for i := 0; i < 50; i++ {
+		canvas.Indent(-14)
+	}
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("back at the margin")
+	target := filepath.Join(t.TempDir(), "back.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	if columns := textColumns(t, contentStream(t, content)); len(columns) == 0 || columns[0] > DefaultMargin+3 {
+		t.Fatalf("text starts at %v, want the margin %v", columns, DefaultMargin)
+	}
+}
+
+func TestDiagramScaleKeepsThePrintedSize(t *testing.T) {
+	size := func(width, height int, scale float64) (float64, float64) {
+		var pngBytes bytes.Buffer
+		if err := png.Encode(&pngBytes, image.NewRGBA(image.Rect(0, 0, width, height))); err != nil {
+			t.Fatal(err)
+		}
+		document := New()
+		if err := document.Canvas().Diagram(pngBytes.Bytes(), scale); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(t.TempDir(), "scale.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatal(err)
+		}
+		content, _ := os.ReadFile(target)
+		match := regexp.MustCompile(`([\d.]+) 0 0 ([\d.]+) [\d.]+ [\d.]+ cm`).FindSubmatch(contentStream(t, content))
+		if match == nil {
+			t.Fatal("no image placement")
+		}
+		w, _ := strconv.ParseFloat(string(match[1]), 64)
+		h, _ := strconv.ParseFloat(string(match[2]), 64)
+		return w, h
+	}
+	w1, h1 := size(200, 100, 1)
+	w2, h2 := size(400, 200, 2)
+	if w1 != w2 || h1 != h2 || w1 != 200 || h1 != 100 {
+		t.Fatalf("scale 1 draws %vx%v, scale 2 draws %vx%v; both should be 200x100", w1, h1, w2, h2)
+	}
+	if w, _ := size(200, 100, 0); w != 200 {
+		t.Fatalf("scale 0 draws %v wide, want 200 (treated as 1)", w)
 	}
 }

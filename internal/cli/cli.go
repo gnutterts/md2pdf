@@ -6,10 +6,14 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/gnutterts/md2pdf/internal/pdfout"
 )
 
 // Mode determines how the supplied input is processed.
@@ -35,6 +39,22 @@ type Plan struct {
 	Mode    Mode
 	Tasks   []Task
 	Mermaid string
+	// Title and Author come from --title and --author; empty means unset.
+	Title  string
+	Author string
+	// MermaidTimeout is the raw --mermaid-timeout value; mermaid.ChooseTimeout validates it.
+	MermaidTimeout string
+	// Scale is the raw --scale value; mermaid.ChooseScale validates it.
+	Scale string
+	// Strict turns warnings into errors (--strict).
+	Strict bool
+	// Paper and Margin come from --paper and --margin; empty and zero mean the defaults.
+	Paper  string
+	Margin float64
+	// NoPageNumbers is set by --no-page-numbers; by default every page is numbered.
+	NoPageNumbers bool
+	// Creator names the program in the PDF; the entry point sets it.
+	Creator string
 }
 
 // FileSystem contains the read operations needed for planning.
@@ -76,14 +96,15 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
-	separate, output, mermaid, positions, err := parseArgs(args)
+	f, err := parseArgs(args)
 	if err != nil {
 		return Plan{}, err
 	}
+	positions := f.positions
 	if len(positions) == 0 {
 		return Plan{}, fmt.Errorf("no input given\n%s", Usage)
 	}
@@ -96,50 +117,111 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	if err != nil {
 		return Plan{}, fmt.Errorf("cannot read %q: %w", input, err)
 	}
+	var plan Plan
 	if !isDir {
-		return planFile(input, output, mermaid, separate, fs)
+		plan, err = planFile(input, f.output, f.mermaid, f.separate, fs)
+	} else {
+		plan, err = planDir(input, f.output, f.mermaid, f.separate, fs)
 	}
-	return planDir(input, output, mermaid, separate, fs)
+	if err != nil {
+		return Plan{}, err
+	}
+	plan.Title, plan.Author = f.title, f.author
+	plan.NoPageNumbers = f.noNumbers
+	plan.Scale = f.scale
+	plan.MermaidTimeout = f.timeout
+	plan.Strict = f.strict
+	if err := checkOutputs(plan, f.force, fs); err != nil {
+		return Plan{}, err
+	}
+	if err := setLayout(&plan, f.paper, f.margin); err != nil {
+		return Plan{}, err
+	}
+	return plan, nil
+}
+
+// flags are the parsed command-line arguments.
+type flags struct {
+	separate  bool
+	output    string
+	mermaid   string
+	title     string
+	author    string
+	noNumbers bool
+	scale     string
+	timeout   string
+	strict    bool
+	force     bool
+	paper     string
+	margin    string
+	positions []string
 }
 
 // parseArgs separates flags from positional arguments. ErrHelp and ErrVersion
 // are returned as errors; the caller recognizes them with errors.Is.
-func parseArgs(args []string) (bool, string, string, []string, error) {
-	var separate bool
-	var output, mermaid string
-	var positions []string
+func parseArgs(args []string) (flags, error) {
+	var f flags
+	value := func(i *int, name string) (string, error) {
+		if *i+1 == len(args) {
+			return "", fmt.Errorf("%s expects a value", name)
+		}
+		*i++
+		return args[*i], nil
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		var err error
 		switch arg {
 		case "-h", "--help":
-			return false, "", "", nil, ErrHelp
+			return flags{}, ErrHelp
 		case "--version":
-			return false, "", "", nil, ErrVersion
+			return flags{}, ErrVersion
 		case "--separate", "-s":
-			separate = true
+			f.separate = true
 		case "-o":
 			if i+1 == len(args) {
-				return false, "", "", nil, errors.New("-o expects a path")
+				return flags{}, errors.New("-o expects a path")
 			}
 			i++
-			output = args[i]
+			f.output = args[i]
 		case "--mermaid":
 			if i+1 == len(args) {
-				return false, "", "", nil, errors.New("--mermaid expects a path")
+				return flags{}, errors.New("--mermaid expects a path")
 			}
 			i++
-			mermaid = args[i]
+			f.mermaid = args[i]
+		case "--strict":
+			f.strict = true
+		case "--force":
+			f.force = true
+		case "--no-page-numbers":
+			f.noNumbers = true
+		case "--paper":
+			f.paper, err = value(&i, "--paper")
+		case "--margin":
+			f.margin, err = value(&i, "--margin")
+		case "--mermaid-timeout":
+			f.timeout, err = value(&i, "--mermaid-timeout")
+		case "--scale":
+			f.scale, err = value(&i, "--scale")
+		case "--title":
+			f.title, err = value(&i, "--title")
+		case "--author":
+			f.author, err = value(&i, "--author")
 		case "--":
-			positions = append(positions, args[i+1:]...)
+			f.positions = append(f.positions, args[i+1:]...)
 			i = len(args)
 		default:
 			if strings.HasPrefix(arg, "-") {
-				return false, "", "", nil, fmt.Errorf("unknown flag: %s", arg)
+				return flags{}, fmt.Errorf("unknown flag: %s", arg)
 			}
-			positions = append(positions, arg)
+			f.positions = append(f.positions, arg)
+		}
+		if err != nil {
+			return flags{}, err
 		}
 	}
-	return separate, output, mermaid, positions, nil
+	return f, nil
 }
 
 func planFile(input, output, mermaid string, separate bool, fs FileSystem) (Plan, error) {
@@ -240,4 +322,88 @@ func pdfName(source string) string {
 		return strings.TrimSuffix(source, extension) + ".pdf"
 	}
 	return source + ".pdf"
+}
+
+// setLayout validates --paper and --margin and stores them in the plan.
+func setLayout(plan *Plan, paper, margin string) error {
+	paper = strings.TrimSpace(paper)
+	width, height := 595.28, 841.89
+	if paper != "" {
+		w, h, ok := pdfout.PaperSize(paper)
+		if !ok {
+			return fmt.Errorf("unknown paper size %q (a4, a5, a3, letter, legal)", paper)
+		}
+		plan.Paper = strings.ToLower(paper)
+		width, height = w, h
+	}
+	if margin != "" {
+		points, err := ParseLength(margin)
+		if err != nil {
+			return fmt.Errorf("--margin: %w", err)
+		}
+		if limit := min(width, height) / 4; points > limit {
+			return fmt.Errorf("--margin %s is too large for this paper (at most %.0f points)", margin, limit)
+		}
+		plan.Margin = points
+	}
+	return nil
+}
+
+// ParseLength reads a length such as 20mm, 0.75in or 56pt into points; a bare
+// number is in points.
+func ParseLength(text string) (float64, error) {
+	text = strings.TrimSpace(strings.ToLower(text))
+	unit, factor := "pt", 1.0
+	switch {
+	case strings.HasSuffix(text, "mm"):
+		unit, factor = "mm", 72/25.4
+	case strings.HasSuffix(text, "in"):
+		unit, factor = "in", 72
+	case strings.HasSuffix(text, "pt"):
+	}
+	number, err := strconv.ParseFloat(strings.TrimSuffix(text, unit), 64)
+	if err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
+		return 0, fmt.Errorf("%q is not a length such as 20mm, 0.75in or 56pt", text)
+	}
+	if number <= 0 {
+		return 0, fmt.Errorf("%q must be positive", text)
+	}
+	return number * factor, nil
+}
+
+// checkOutputs refuses an output that is also an input, and an existing output
+// that is not a PDF unless force is set. Overwriting an earlier PDF is the
+// normal repeated run and stays allowed.
+func checkOutputs(plan Plan, force bool, fs FileSystem) error {
+	for _, task := range plan.Tasks {
+		for _, source := range task.Sources {
+			if sameFile(source, task.Target) {
+				return fmt.Errorf("output %q is also an input", task.Target)
+			}
+		}
+		if force || strings.EqualFold(filepath.Ext(task.Target), ".pdf") {
+			continue
+		}
+		if _, err := fs.Stat(task.Target); err == nil {
+			return fmt.Errorf("output %q exists and is not a PDF; use --force to overwrite", task.Target)
+		}
+	}
+	return nil
+}
+
+// sameFile reports whether two paths name the same file: the same absolute
+// path, or, when both exist, the same file on disk (through a symbolic link, a
+// hard link, or a different spelling on a case-insensitive file system).
+func sameFile(a, b string) bool {
+	if absA, err := filepath.Abs(a); err == nil {
+		if absB, err := filepath.Abs(b); err == nil && absA == absB {
+			return true
+		}
+	}
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	infoB, err := os.Stat(b)
+	return err == nil && os.SameFile(infoA, infoB)
 }

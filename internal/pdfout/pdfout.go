@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
@@ -17,20 +18,55 @@ import (
 	"github.com/go-pdf/fpdf"
 )
 
-const (
-	margin = 56.0
-	width  = 595.28
-)
+// DefaultMargin is the margin on every side in points.
+const DefaultMargin = 64.0
+
+// Layout is the paper size and margin of a document.
+type Layout struct {
+	Paper  string  // a3, a4, a5, letter or legal; empty means a4
+	Margin float64 // points on every side; 0 means DefaultMargin
+}
+
+// paperSizes are the page sizes in points that fpdf knows, portrait.
+var paperSizes = map[string][2]float64{
+	"a3":     {841.89, 1190.55},
+	"a4":     {595.28, 841.89},
+	"a5":     {419.53, 595.28},
+	"letter": {612, 792},
+	"legal":  {612, 1008},
+}
+
+// PaperSize returns the portrait size in points of a paper name, ignoring case.
+func PaperSize(name string) (width, height float64, ok bool) {
+	size, ok := paperSizes[strings.ToLower(name)]
+	return size[0], size[1], ok
+}
 
 // Document is an A4 PDF with a drawing surface.
 type Document struct {
 	pdf    *fpdf.Fpdf
-	indent float64
-	images int
+	margin float64
+	width  float64 // page width in points
+	indent float64 // the indentation in use: requested, but never wider than maxIndent
+	// requested is the sum of all Indent calls, so that indenting back is exact even
+	// when the indentation in use was capped.
+	requested float64
+	images    int
+
+	// outline holds the heading levels of the bookmarks that are still open; its
+	// length is the outline depth of the next bookmark.
+	outline []int
 
 	font    fontStyle
 	fontSet bool
-	strike  bool
+	// lineSize is the largest font size chosen since the last line break or new
+	// page, starting from the font size then in use; the
+	// height of a wrapped line follows it, not the smaller size of an inline span.
+	lineSize float64
+	// fresh is true from a line break or a new page until the first Style or
+	// Text of the next line: that Style sets lineSize instead of raising it.
+	fresh  bool
+	strike bool
 }
 
 // fontStyle remembers the last font chosen through Canvas.Style, without
@@ -41,13 +77,56 @@ type fontStyle struct {
 	size   float64
 }
 
-// New creates an empty A4 document.
-func New() *Document {
-	pdf := fpdf.New("P", "pt", "A4", "")
+// New creates an empty A4 document with the default margin.
+func New() *Document { return NewWithLayout(Layout{}) }
+
+// NewWithLayout creates an empty document with the given paper size and margin.
+func NewWithLayout(layout Layout) *Document {
+	paper := strings.ToLower(layout.Paper)
+	if _, _, ok := PaperSize(paper); !ok {
+		paper = "a4"
+	}
+	margin := layout.Margin
+	if margin <= 0 {
+		margin = DefaultMargin
+	}
+	pdf := fpdf.New("P", "pt", paper, "")
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
-	return &Document{pdf: pdf}
+	width, _ := pdf.GetPageSize()
+	return &Document{pdf: pdf, margin: margin, width: width}
+}
+
+// SetInfo sets the document information; empty values are left unset.
+func (d *Document) SetInfo(title, author, creator string) {
+	if title != "" {
+		d.pdf.SetTitle(title, true)
+	}
+	if author != "" {
+		d.pdf.SetAuthor(author, true)
+	}
+	if creator != "" {
+		d.pdf.SetCreator(creator, true)
+	}
+}
+
+// SetPageNumbers puts "n / N" centred in grey below the text of every page.
+func (d *Document) SetPageNumbers(on bool) {
+	if !on {
+		d.pdf.SetFooterFunc(nil)
+		return
+	}
+	d.pdf.AliasNbPages("")
+	// fpdf saves and restores the font (with underline), the colours and the
+	// line width around the footer, so nothing is restored here.
+	d.pdf.SetFooterFunc(func() {
+		pdf := d.pdf
+		pdf.SetXY(d.margin, -d.margin/2-4)
+		pdf.SetFont("Helvetica", "", 9)
+		pdf.SetTextColor(128, 128, 128)
+		pdf.CellFormat(d.width-2*d.margin, 10, fmt.Sprintf("%d / {nb}", pdf.PageNo()), "", 0, "C", false, 0, "")
+	})
 }
 
 // Canvas returns the drawing surface of the document.
@@ -69,7 +148,11 @@ func (d *Document) Write(path string) error {
 
 type documentCanvas struct{ d *Document }
 
-func (v documentCanvas) NewPage() { v.d.pdf.AddPage(); v.resetX() }
+func (v documentCanvas) NewPage() {
+	v.d.pdf.AddPage()
+	v.d.lineSize, v.d.fresh = v.d.font.size, true
+	v.resetX()
+}
 func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 	style := ""
 	if bold {
@@ -79,6 +162,11 @@ func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 		style += "I"
 	}
 	v.d.font = fontStyle{family: family, style: style, size: size}
+	if v.d.fresh {
+		v.d.lineSize, v.d.fresh = size, false
+	} else {
+		v.d.lineSize = max(v.d.lineSize, size)
+	}
 	v.d.fontSet = true
 	v.applyFont()
 }
@@ -86,14 +174,64 @@ func (v documentCanvas) Strike(on bool) {
 	v.d.strike = on
 	v.applyFont()
 }
-func (v documentCanvas) Text(s string) { v.d.pdf.Write(15, text.ToCP1252(s)) }
+
+// Bookmark adds an outline entry for a heading. The outline depth is the
+// number of open headings of a lower level, so levels are contiguous whatever
+// the heading levels do (a skipped level, a document that starts at level 3,
+// or a merged file that starts again at level 1). The entry is placed on the
+// page where the heading text starts: when the heading no longer fits on the
+// current page, a new page is started first.
+func (v documentCanvas) Bookmark(title string, level int) {
+	if title == "" {
+		return
+	}
+	d := v.d
+	if !v.rowFits(math.Max(15, d.font.size*1.35)) {
+		// Not NewPage: the heading style is already chosen and must keep its line height.
+		d.pdf.AddPage()
+		v.resetX()
+	}
+	for len(d.outline) > 0 && d.outline[len(d.outline)-1] >= level {
+		d.outline = d.outline[:len(d.outline)-1]
+	}
+	// fpdf converts the title to UTF-16 only for UTF-8 fonts. The core fonts
+	// used now would send it as PDFDocEncoding, which differs from cp1252 for
+	// the characters 0x80 to 0x9F, so the title is encoded here. When an
+	// embedded UTF-8 font is used, pass the title unchanged instead.
+	d.pdf.Bookmark(utf16Title(title), len(d.outline), -1)
+	d.outline = append(d.outline, level)
+}
+
+// utf16Title encodes text as UTF-16BE with a byte order mark.
+func utf16Title(text string) string {
+	units := utf16.Encode([]rune(text))
+	encoded := make([]byte, 0, 2+2*len(units))
+	encoded = append(encoded, 0xfe, 0xff)
+	for _, unit := range units {
+		encoded = append(encoded, byte(unit>>8), byte(unit))
+	}
+	return string(encoded)
+}
+
+// lineHeight is the height of a line of the block that is being written.
+func (v documentCanvas) lineHeight() float64 {
+	if v.d.lineSize <= 0 {
+		return render.LineHeight(0)
+	}
+	return render.LineHeight(v.d.lineSize)
+}
+func (v documentCanvas) Text(s string) {
+	v.d.fresh = false
+	v.d.pdf.Write(v.lineHeight(), text.ToCP1252(s))
+}
 func (v documentCanvas) Link(s, url string) {
 	r, g, b := v.d.pdf.GetTextColor()
 	v.d.pdf.SetTextColor(0, 70, 160)
 	if v.d.fontSet {
 		v.d.pdf.SetFont(v.d.font.family, v.styleString()+"U", v.d.font.size)
 	}
-	v.d.pdf.WriteLinkString(15, text.ToCP1252(s), url)
+	v.d.fresh = false
+	v.d.pdf.WriteLinkString(v.lineHeight(), text.ToCP1252(s), url)
 	if v.d.fontSet {
 		v.applyFont()
 	}
@@ -112,10 +250,24 @@ func (v documentCanvas) applyFont() {
 	}
 	v.d.pdf.SetFont(v.d.font.family, v.styleString(), v.d.font.size)
 }
-func (v documentCanvas) LineBreak(h float64) { v.d.pdf.Ln(h); v.resetX() }
+func (v documentCanvas) LineBreak(h float64) {
+	v.d.pdf.Ln(h)
+	v.d.lineSize, v.d.fresh = v.d.font.size, true
+	v.resetX()
+}
+
+// minTextWidth is the text width that deep nesting never takes away.
+const minTextWidth = 120.0
+
+// maxIndent is the widest indentation that still leaves minTextWidth of text.
+func (d *Document) maxIndent() float64 {
+	return max(d.width-2*d.margin-minTextWidth, 0)
+}
+
 func (v documentCanvas) Indent(p float64) {
-	v.d.indent += p
-	v.d.pdf.SetLeftMargin(margin + v.d.indent)
+	v.d.requested = max(v.d.requested+p, 0)
+	v.d.indent = min(v.d.requested, v.d.maxIndent())
+	v.d.pdf.SetLeftMargin(v.d.margin + v.d.indent)
 	v.resetX()
 }
 func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) }
@@ -125,7 +277,7 @@ func (v documentCanvas) HangingIndent() { v.d.pdf.SetLeftMargin(v.d.pdf.GetX()) 
 // wider than the gutter.
 func (v documentCanvas) Marker(s string) {
 	const gutter = 14.0
-	left := margin + v.d.indent
+	left := v.d.margin + v.d.indent
 	v.d.pdf.SetX(left - gutter)
 	v.d.pdf.Write(15, text.ToCP1252(s))
 	if v.d.pdf.GetX() < left {
@@ -138,7 +290,7 @@ func (v documentCanvas) Checkbox(prefix string, checked bool) {
 	const gutter = 14.0
 	const boxSize = 8.0
 	const boxGap = 3.0
-	left := margin + v.d.indent
+	left := v.d.margin + v.d.indent
 	pdf := v.d.pdf
 	pdf.SetX(left - gutter)
 	if prefix != "" {
@@ -179,7 +331,7 @@ func (v documentCanvas) Quote(levels int, draw func()) {
 	_, top, _, bottom := pdf.GetMargins()
 
 	for level := 1; level <= levels; level++ {
-		x := margin + 14*float64(level-1) + 4
+		x := v.d.margin + min(14*float64(level-1), max(v.d.maxIndent()-14, 0)) + 4 // stays left of the capped text
 		for page := startPage; page <= endPage; page++ {
 			pdf.SetPage(page)
 			pdf.SetDrawColor(180, 180, 180)
@@ -236,8 +388,12 @@ func wrapCode(line string, limit int) []string {
 	return pieces
 }
 
-// Diagram registers and draws a PNG without a temporary file.
-func (v documentCanvas) Diagram(png []byte) error {
+// Diagram registers and draws a PNG without a temporary file. The PNG was
+// rendered at scale times the size it has on the page; a scale of 0 means 1.
+func (v documentCanvas) Diagram(png []byte, scale float64) error {
+	if scale <= 0 {
+		scale = 1
+	}
 	v.d.images++
 	name := fmt.Sprintf("diagram-%d.png", v.d.images)
 	options := fpdf.ImageOptions{ImageType: "PNG"}
@@ -248,7 +404,7 @@ func (v documentCanvas) Diagram(png []byte) error {
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
 		return errors.New("invalid PNG for diagram")
 	}
-	width := min(info.Width(), v.contentWidth())
+	width := min(info.Width()/scale, v.contentWidth())
 	height := info.Height() * width / info.Width()
 	// A diagram taller than a whole page would run over the edge and be
 	// clipped; then the page height determines the scale, not the width.
@@ -554,7 +710,7 @@ func (v documentCanvas) rowFits(height float64) bool {
 // drawRow draws one row at the current position.
 func (v documentCanvas) drawRow(row markdown.Row, widths []float64) {
 	height := v.rowHeight(row, widths)
-	x := margin + v.d.indent
+	x := v.d.margin + v.d.indent
 	y := v.d.pdf.GetY()
 	for column, cell := range row.Cells {
 		if column >= len(widths) {
@@ -563,7 +719,7 @@ func (v documentCanvas) drawRow(row markdown.Row, widths []float64) {
 		v.drawCell(cell, row.Header, x, y, widths[column], height)
 		x += widths[column]
 	}
-	v.d.pdf.SetXY(margin+v.d.indent, y+height)
+	v.d.pdf.SetXY(v.d.margin+v.d.indent, y+height)
 }
 
 // drawCell draws the background, border, and text of one cell.
@@ -617,8 +773,8 @@ func alignment(u markdown.Alignment) string {
 }
 func (v documentCanvas) Rule() {
 	y := v.d.pdf.GetY() + 3
-	v.d.pdf.Line(margin+v.d.indent, y, width-margin, y)
+	v.d.pdf.Line(v.d.margin+v.d.indent, y, v.d.width-v.d.margin, y)
 }
 func (v documentCanvas) Err() error            { return v.d.pdf.Error() }
-func (v documentCanvas) resetX()               { v.d.pdf.SetX(margin + v.d.indent) }
-func (v documentCanvas) contentWidth() float64 { return width - 2*margin - v.d.indent }
+func (v documentCanvas) resetX()               { v.d.pdf.SetX(v.d.margin + v.d.indent) }
+func (v documentCanvas) contentWidth() float64 { return v.d.width - 2*v.d.margin - v.d.indent }
