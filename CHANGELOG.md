@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.0 — 2026-09-25
+
+This release makes the output a proper document, and makes runs safer.
+
+### Added
+
+- The PDF records a title, an author and the creator. The title comes from `--title`, the front matter,
+  the first level 1 heading, or the file name (the directory name when a directory is merged); the author from `--author` or the front matter.
+- Every page is numbered (`n / N`, centred in grey); `--no-page-numbers` turns it off.
+- `--paper` (`a4`, `a5`, `a3`, `letter`, `legal`) and `--margin` (`20mm`, `0.75in`, `56pt`).
+- Every heading becomes a bookmark in the outline of the PDF viewer.
+- `--strict` treats a warning, such as a failed Mermaid diagram, as an error: the run stops, the failing file gets no PDF and the
+  exit code is 1.
+- `--force` allows `-o` to overwrite an existing file that is not a PDF.
+
+### Changed
+
+- Wrapped lines follow the font size, so long headings no longer overlap. Headings of level 5 and 6 are
+  bold italic and italic.
+- The default margin is 64 points instead of 56, which gives about 80 characters per line.
+- With `--separate`, a file that cannot be read or written is skipped with a warning and the other files
+  are still made; the run ends with `error: N of M files failed`.
+- `go.mod` lists goldmark and fpdf as direct dependencies, and CI checks that the module is tidy and runs
+  the tests with the race detector.
+
+### Fixed
+
+- `-o` naming an input file, also through a link or another spelling of the same path, is refused instead
+  of overwriting the source.
+
 ## 0.2.1 — 2026-09-22
 
 ### Fixed
