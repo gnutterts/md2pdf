@@ -29,8 +29,6 @@ type fakeCanvas struct {
 	style  activeStyle
 	tables [][]markdown.Row
 	scales []float64 // the scale of every diagram
-	// keepBreaks is what KeepWithNext reports.
-	keepBreaks bool
 }
 
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
@@ -70,10 +68,6 @@ func (n *fakeCanvas) Diagram(_ []byte, scale float64) error {
 	n.calls = append(n.calls, "diagram")
 	n.scales = append(n.scales, scale)
 	return nil
-}
-func (n *fakeCanvas) KeepWithNext(h float64) bool {
-	n.calls = append(n.calls, fmt.Sprintf("keep:%g", h))
-	return n.keepBreaks
 }
 func (n *fakeCanvas) Rule() { n.calls = append(n.calls, "rule") }
 func (n *fakeCanvas) Bookmark(text string, level int) {
@@ -575,6 +569,28 @@ func TestTheDiagramCacheRendersOnceUnderConcurrency(t *testing.T) {
 			t.Errorf("goroutine %d got %q", i, result)
 		}
 	}
+}
+
+func TestAnImageBlockDrawsNoAltTextYet(t *testing.T) {
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "before"}}},
+		{Kind: markdown.Image, Path: "p.png", Spans: []markdown.Span{{Text: "secret alt"}}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "after"}}},
+	}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range canvas.calls {
+		if strings.Contains(call, "secret alt") {
+			t.Fatalf("alt text leaked: %v", canvas.calls)
+		}
+	}
+}
+
+func (n *fakeCanvas) KeepWithNext(h float64) bool {
+	n.calls = append(n.calls, fmt.Sprintf("keep:%g", h))
+	return n.keepBreaks
 }
 
 func TestAHeadingAsksToKeepWithTheNextBlock(t *testing.T) {
