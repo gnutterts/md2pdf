@@ -275,3 +275,61 @@ func TestRunStrictWritesNoPDFWhenADiagramFails(t *testing.T) {
 		t.Fatal("a PDF was written although --strict failed the run")
 	}
 }
+
+// separatePlan writes two readable sources and puts a missing one between them.
+func separatePlan(t *testing.T, strict bool) (cli.Plan, []string) {
+	t.Helper()
+	dirName := t.TempDir()
+	var tasks []cli.Task
+	var targets []string
+	for i, name := range []string{"a.md", "missing.md", "c.md"} {
+		source := filepath.Join(dirName, name)
+		if i != 1 {
+			if err := os.WriteFile(source, []byte("# "+name+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		target := filepath.Join(dirName, "out", strings.TrimSuffix(name, ".md")+".pdf")
+		targets = append(targets, target)
+		tasks = append(tasks, cli.Task{Sources: []string{source}, Target: target})
+	}
+	return cli.Plan{Mode: cli.ModeSeparate, Strict: strict, Tasks: tasks}, targets
+}
+
+func TestRunSeparateGoesOnAfterABrokenFile(t *testing.T) {
+	plan, targets := separatePlan(t, false)
+	var warnings []string
+	err := Run(plan, render.Options{Warn: func(message string) { warnings = append(warnings, message) }})
+	if err == nil || err.Error() != "1 of 3 files failed" {
+		t.Fatalf("err = %v", err)
+	}
+	for _, target := range []string{targets[0], targets[2]} {
+		if _, statErr := os.Stat(target); statErr != nil {
+			t.Errorf("%s was not written: %v", target, statErr)
+		}
+	}
+	if _, statErr := os.Stat(targets[1]); statErr == nil {
+		t.Error("a PDF exists for the broken file")
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "missing.md") || !strings.HasPrefix(warnings[0], "skipped") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
+func TestRunSeparateStrictStopsAtTheFirstFailure(t *testing.T) {
+	plan, targets := separatePlan(t, true)
+	if err := Run(plan, render.Options{}); err == nil || !strings.Contains(err.Error(), "missing.md") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, statErr := os.Stat(targets[2]); statErr == nil {
+		t.Error("the file after the failure was written although --strict stops the batch")
+	}
+}
+
+func TestRunSeparateCountsASingleFile(t *testing.T) {
+	plan, _ := separatePlan(t, false)
+	plan.Tasks = plan.Tasks[1:2]
+	if err := Run(plan, render.Options{}); err == nil || err.Error() != "1 of 1 file failed" {
+		t.Fatalf("err = %v", err)
+	}
+}
