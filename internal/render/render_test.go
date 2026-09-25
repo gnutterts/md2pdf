@@ -25,10 +25,11 @@ type activeStyle struct {
 }
 
 type fakeCanvas struct {
-	calls  []string
-	style  activeStyle
-	tables [][]markdown.Row
-	scales []float64 // the scale of every diagram
+	calls    []string
+	style    activeStyle
+	tables   [][]markdown.Row
+	scales   []float64 // the scale of every diagram
+	imageErr error     // what Image returns
 	// keepBreaks is what KeepWithNext reports.
 	keepBreaks bool
 }
@@ -680,5 +681,43 @@ func TestDiagramTextsAreDistinctAndInOrder(t *testing.T) {
 	blocks := []markdown.Block{mermaidBlock("b"), {Kind: markdown.CodeBlock, Language: "go", Lines: []string{"x"}}, mermaidBlock("a"), mermaidBlock("b")}
 	if got := DiagramTexts(blocks); fmt.Sprint(got) != "[b a]" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func (n *fakeCanvas) Image(path string) error {
+	if n.imageErr != nil {
+		return n.imageErr
+	}
+	n.calls = append(n.calls, "image:"+path)
+	return nil
+}
+
+func TestAnImageIsDrawnOrFallsBackToItalicAltText(t *testing.T) {
+	block := []markdown.Block{{Kind: markdown.Image, Path: "p.png", Spans: []markdown.Span{{Text: "Alt"}}}}
+	canvas := &fakeCanvas{}
+	if err := Draw(block, canvas, Options{}); err != nil || !contains(canvas.calls, "image:p.png") {
+		t.Fatalf("err = %v, calls = %v", err, canvas.calls)
+	}
+	canvas = &fakeCanvas{imageErr: errors.New("not found")}
+	var warnings []string
+	if err := Draw(block, canvas, Options{Warn: func(m string) { warnings = append(warnings, m) }}); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(canvas.calls, "text:Alt:Helvetica:I:11") || len(warnings) != 1 || warnings[0] != `image "p.png" skipped: not found` {
+		t.Fatalf("calls = %v, warnings = %q", canvas.calls, warnings)
+	}
+	canvas = &fakeCanvas{imageErr: errors.New("not found")}
+	if err := Draw(block, canvas, Options{Strict: true}); err == nil || !strings.Contains(err.Error(), "(--strict)") {
+		t.Fatalf("strict: err = %v", err)
+	}
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "text:") {
+			t.Fatalf("strict drew the fallback: %v", canvas.calls)
+		}
+	}
+	noAlt := []markdown.Block{{Kind: markdown.Image, Path: filepath.Join("dir", "logo.png")}}
+	canvas = &fakeCanvas{imageErr: errors.New("not found")}
+	if err := Draw(noAlt, canvas, Options{}); err != nil || !contains(canvas.calls, "text:logo.png:Helvetica:I:11") {
+		t.Fatalf("without alt text: err = %v, calls = %v", err, canvas.calls)
 	}
 }

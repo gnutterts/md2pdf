@@ -7,6 +7,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	"image/png"
 	"math"
 	"os"
 	"strings"
@@ -404,9 +409,16 @@ func (v documentCanvas) Diagram(png []byte, scale float64) error {
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
 		return errors.New("invalid PNG for diagram")
 	}
-	width := min(info.Width()/scale, v.contentWidth())
+	return v.placeImage(name, options, info.Width()/scale, info)
+}
+
+// placeImage draws a registered image at most width points wide and no wider
+// than the text, keeping its proportions, and starts a new page when it does not
+// fit on this one.
+func (v documentCanvas) placeImage(name string, options fpdf.ImageOptions, width float64, info *fpdf.ImageInfoType) error {
+	width = min(width, v.contentWidth())
 	height := info.Height() * width / info.Width()
-	// A diagram taller than a whole page would run over the edge and be
+	// An image taller than a whole page would run over the edge and be
 	// clipped; then the page height determines the scale, not the width.
 	if maxHeight := v.pageContentHeight(); height > maxHeight {
 		height = maxHeight
@@ -421,6 +433,88 @@ func (v documentCanvas) Diagram(png []byte, scale float64) error {
 	}
 	v.resetX()
 	return nil
+}
+
+// Limits on an image file, so that a huge picture cannot exhaust memory.
+const (
+	maxImageFile   = 64 << 20
+	maxImagePixels = 40_000_000
+)
+
+// Image draws a PNG, JPEG or GIF file at its natural size (96 pixels to the
+// inch), but no wider than the text. The file is checked before fpdf sees it,
+// and an image fpdf cannot read directly is converted first, so that a bad
+// picture never leaves fpdf in its sticky error state.
+func (v documentCanvas) Image(path string) error {
+	pdf := v.d.pdf
+	if err := pdf.Error(); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("not found")
+		}
+		return err
+	}
+	if info.IsDir() {
+		return errors.New("is a directory")
+	}
+	if info.Size() > maxImageFile {
+		return fmt.Errorf("file is too large (%.1f MiB, limit %d MiB)", float64(info.Size())/(1<<20), maxImageFile>>20)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return errors.New("unsupported format (PNG, JPEG and GIF can be drawn)")
+	}
+	if config.Width <= 0 || config.Height <= 0 || config.Width > maxImagePixels/config.Height {
+		return fmt.Errorf("image of %dx%d pixels is too large", config.Width, config.Height)
+	}
+	v.d.images++
+	name := fmt.Sprintf("image-%d", v.d.images)
+	options := fpdf.ImageOptions{ImageType: strings.ToUpper(format)}
+	registered := pdf.RegisterImageOptionsReader(name, options, bytes.NewReader(data))
+	if pdf.Error() != nil {
+		// fpdf rejects some valid files, such as interlaced or 16-bit PNGs:
+		// decode them here and hand fpdf a plain 8-bit PNG instead.
+		pdf.ClearError()
+		converted, convertErr := plainPNG(data)
+		if convertErr != nil {
+			return fmt.Errorf("cannot read image: %w", convertErr)
+		}
+		v.d.images++
+		name = fmt.Sprintf("image-%d", v.d.images)
+		options = fpdf.ImageOptions{ImageType: "PNG"}
+		registered = pdf.RegisterImageOptionsReader(name, options, bytes.NewReader(converted))
+		if err := pdf.Error(); err != nil {
+			pdf.ClearError()
+			return fmt.Errorf("cannot read image: %w", err)
+		}
+	}
+	if registered == nil || registered.Width() <= 0 || registered.Height() <= 0 {
+		return errors.New("cannot read image")
+	}
+	return v.placeImage(name, options, float64(config.Width)*72/96, registered)
+}
+
+// plainPNG decodes an image and encodes it as a non-interlaced 8-bit PNG.
+func plainPNG(data []byte) ([]byte, error) {
+	decoded, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	bounds := decoded.Bounds()
+	plain := image.NewNRGBA(bounds)
+	draw.Draw(plain, bounds, decoded, bounds.Min, draw.Src)
+	var out bytes.Buffer
+	if err := png.Encode(&out, plain); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 const (

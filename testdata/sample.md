@@ -89,7 +89,7 @@ A line break inside a paragraph: Line one<br>line two<br/>line three.
 |---|---|
 | Break | x<br>y |
 
-<div align="center"><img src="logo.png" alt="Project logo"><p>Centered &amp; entity.</p></div>
+<div align="center"><img src="banner.png" alt="Project logo"><p>Centered &amp; entity.</p></div>
 
 ## Structure
 
@@ -117,3 +117,11 @@ A line break inside a paragraph: Line one<br>line two<br/>line three.
 - with two items
 1. immediately followed by a numbered list
 2. of a different kind
+
+## An image
+
+A picture from a file next to this document, drawn at its natural size:
+
+![A blue and white chequered banner](banner.png)
+
+A picture that is missing shows its alt text instead: ![This picture is missing](missing.png)

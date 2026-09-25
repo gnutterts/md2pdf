@@ -3,6 +3,8 @@
 package markdown
 
 import (
+	"fmt"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -68,14 +70,30 @@ func TestParseHTMLBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"Project logo", "Centered & entity."}
-	if len(blocks) != len(want) {
-		t.Fatalf("Parse returned %d blocks, want %d: %v", len(blocks), len(want), blocks)
+	// A local <img> is an image block with its alt text; the text around it stays.
+	if len(blocks) != 2 {
+		t.Fatalf("Parse returned %d blocks, want 2: %v", len(blocks), blocks)
 	}
-	for i, text := range want {
-		if blocks[i].Kind != Paragraph || len(blocks[i].Spans) != 1 || blocks[i].Spans[0].Text != text {
-			t.Fatalf("block %d = %v, want paragraph %q", i, blocks[i], text)
-		}
+	if blocks[0].Kind != Image || blocks[0].Path != "logo.png" || PlainText(blocks[0].Spans) != "Project logo" {
+		t.Fatalf("block 0 = %v, want image logo.png with its alt text", blocks[0])
+	}
+	if blocks[1].Kind != Paragraph || PlainText(blocks[1].Spans) != "Centered & entity." {
+		t.Fatalf("block 1 = %v, want the paragraph", blocks[1])
+	}
+}
+
+func TestParseHTMLImages(t *testing.T) {
+	dir := filepath.Join("docs")
+	blocks, err := ParseIn([]byte("<p>Before <img src=\"a.png\" alt=\"A\"> after <img src=\"https://x.org/b.png\" alt=\"remote\"></p>\n"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := kinds(blocks), []string{"P:Before", "I:" + filepath.Join(dir, "a.png") + "|A", "P:after remote"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	// htmlText itself still turns every image into its alt text.
+	if got := htmlText("<p>x <img src=\"a.png\" alt=\"A\"></p>"); fmt.Sprint(got) != "[x A]" {
+		t.Fatalf("htmlText = %q", got)
 	}
 }
 
@@ -131,5 +149,31 @@ func TestHTMLTextKeepsStrayAngleBrackets(t *testing.T) {
 				t.Fatalf("htmlText(%q) = %q, want %q", test.html, got, test.want)
 			}
 		})
+	}
+}
+
+func TestHTMLImagesInLinksCellsAndHeadingsStayText(t *testing.T) {
+	for _, html := range []string{
+		`<a href="x"><img src="a.png" alt="A"></a>`,
+		`<table><tr><td><img src="a.png" alt="A"></td></tr></table>`,
+		`<h2>Title <img src="a.png" alt="A"></h2>`,
+	} {
+		for _, part := range htmlParts(html, func(string) bool { return true }) {
+			if part.src != "" {
+				t.Errorf("%s: the image became a block", html)
+			}
+		}
+	}
+	// After the link is closed, an image is a block again.
+	parts := htmlParts(`<p><a href="x">link</a> <img src="b.png" alt="B"></p>`, func(string) bool { return true })
+	if len(parts) != 2 || parts[1].src != "b.png" {
+		t.Fatalf("parts = %+v", parts)
+	}
+}
+
+func TestTextThatLooksLikeTheImageMarkStaysText(t *testing.T) {
+	parts := htmlParts("<p>"+imageMark+"</p>", func(string) bool { return true })
+	if len(parts) != 1 || parts[0].src != "" {
+		t.Fatalf("parts = %+v", parts)
 	}
 }

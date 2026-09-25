@@ -6,6 +6,7 @@ package render
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -55,6 +56,9 @@ type Canvas interface {
 	// proportions, and starts on a new page when it no longer fits.
 	// scale is how many times larger than its size on the page the PNG was rendered.
 	Diagram(png []byte, scale float64) error
+	// Image draws a PNG, JPEG or GIF file at its natural size, no wider than the
+	// text; it returns an error for a file it cannot draw.
+	Image(path string) error
 	Err() error
 }
 
@@ -212,6 +216,31 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 		canvas.Indent(indent)
 		drawCodeBlock(canvas, block.Lines)
 		canvas.Indent(-indent)
+	case markdown.Image:
+		indent := continuationIndent(block)
+		canvas.Indent(indent)
+		err := canvas.Image(block.Path)
+		canvas.Indent(-indent)
+		if err == nil {
+			canvas.LineBreak(6)
+			break
+		}
+		state.warn(options, fmt.Sprintf("image %q skipped: %v", block.Path, err))
+		if state.err != nil {
+			return
+		}
+		// The alt text, in italics, takes the place of the picture.
+		alt := block.Spans
+		if len(alt) == 0 {
+			alt = []markdown.Span{{Text: filepath.Base(block.Path)}}
+		}
+		fallback := block
+		fallback.Kind, fallback.Spans = markdown.Paragraph, make([]markdown.Span, len(alt))
+		for i, span := range alt {
+			span.Italic = true
+			fallback.Spans[i] = span
+		}
+		drawBlock(canvas, fallback, options, state, false)
 	case markdown.Rule:
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
