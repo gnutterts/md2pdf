@@ -28,6 +28,11 @@ type Document struct {
 	indent float64
 	images int
 
+	// lastLevel is the outline level of the previous bookmark, -1 before the first.
+	lastLevel int
+	// baseLevel is the heading level that becomes outline level 0.
+	baseLevel int
+
 	font    fontStyle
 	fontSet bool
 	strike  bool
@@ -47,7 +52,7 @@ func New() *Document {
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
-	return &Document{pdf: pdf}
+	return &Document{pdf: pdf, lastLevel: -1}
 }
 
 // SetInfo sets the document information; empty values are left unset.
@@ -116,6 +121,26 @@ func (v documentCanvas) Style(family string, bold, italic bool, size float64) {
 func (v documentCanvas) Strike(on bool) {
 	v.d.strike = on
 	v.applyFont()
+}
+
+// Bookmark adds an outline entry for a heading. Levels are made contiguous:
+// the first heading of the document is level 0 and an entry is at most one
+// level deeper than the one before it, because fpdf builds a crooked tree
+// otherwise.
+func (v documentCanvas) Bookmark(title string, level int) {
+	if title == "" {
+		return
+	}
+	d := v.d
+	if d.lastLevel < 0 {
+		d.baseLevel = level
+	}
+	normal := max(level-d.baseLevel, 0)
+	if normal > d.lastLevel+1 {
+		normal = d.lastLevel + 1
+	}
+	d.lastLevel = normal
+	d.pdf.Bookmark(text.ToCP1252(title), normal, -1)
 }
 func (v documentCanvas) Text(s string) { v.d.pdf.Write(15, text.ToCP1252(s)) }
 func (v documentCanvas) Link(s, url string) {

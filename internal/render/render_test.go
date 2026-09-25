@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -60,6 +61,9 @@ func (n *fakeCanvas) CodeBlock(r []string) {
 }
 func (n *fakeCanvas) Diagram([]byte) error { n.calls = append(n.calls, "diagram"); return nil }
 func (n *fakeCanvas) Rule()                { n.calls = append(n.calls, "rule") }
+func (n *fakeCanvas) Bookmark(text string, level int) {
+	n.calls = append(n.calls, fmt.Sprintf("bookmark:%d:%s", level, text))
+}
 func (n *fakeCanvas) Table(rows []markdown.Row) {
 	n.tables = append(n.tables, rows)
 	n.calls = append(n.calls, fmt.Sprintf("table:%d", len(rows)))
@@ -391,4 +395,25 @@ func TestDrawListSpaceWhenQuoteLevelChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkOrder(t, canvas.calls, []string{"text:quoted:Helvetica:I:11", "end:6", "text:plain:Helvetica::11"})
+}
+
+func TestHeadingsBecomeBookmarks(t *testing.T) {
+	heading := func(level int, text string) markdown.Block {
+		return markdown.Block{Kind: markdown.Heading, Level: level, Spans: []markdown.Span{{Text: text, Bold: true}, {Text: " two", Code: true}}}
+	}
+	canvas := &fakeCanvas{}
+	blocks := []markdown.Block{heading(1, "One"), heading(3, "Three"), heading(2, "Two")}
+	if err := Draw(blocks, canvas, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, call := range canvas.calls {
+		if strings.HasPrefix(call, "bookmark:") {
+			got = append(got, call)
+		}
+	}
+	want := []string{"bookmark:1:One two", "bookmark:3:Three two", "bookmark:2:Two two"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bookmarks = %v, want %v", got, want)
+	}
 }
