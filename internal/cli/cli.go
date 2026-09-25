@@ -42,6 +42,8 @@ type Plan struct {
 	// Title and Author come from --title and --author; empty means unset.
 	Title  string
 	Author string
+	// Strict turns warnings into errors (--strict).
+	Strict bool
 	// Paper and Margin come from --paper and --margin; empty and zero mean the defaults.
 	Paper  string
 	Margin float64
@@ -90,7 +92,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--no-page-numbers] [--paper size] [--margin length] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--strict] [--no-page-numbers] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -122,6 +124,7 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	}
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
+	plan.Strict = f.strict
 	if err := setLayout(&plan, f.paper, f.margin); err != nil {
 		return Plan{}, err
 	}
@@ -136,6 +139,7 @@ type flags struct {
 	title     string
 	author    string
 	noNumbers bool
+	strict    bool
 	paper     string
 	margin    string
 	positions []string
@@ -174,6 +178,8 @@ func parseArgs(args []string) (flags, error) {
 			}
 			i++
 			f.mermaid = args[i]
+		case "--strict":
+			f.strict = true
 		case "--no-page-numbers":
 			f.noNumbers = true
 		case "--paper":

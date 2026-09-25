@@ -254,3 +254,24 @@ func TestRunMergedTitleFallsBackToDirectoryName(t *testing.T) {
 		t.Fatalf("Title = %q", got)
 	}
 }
+
+func TestRunStrictWritesNoPDFWhenADiagramFails(t *testing.T) {
+	dirName := t.TempDir()
+	source := filepath.Join(dirName, "diagram.md")
+	if err := os.WriteFile(source, []byte("```mermaid\ngraph TD\nA-->B\n```\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dirName, "fails")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dirName, "diagram.pdf")
+	options := render.Options{Mermaid: mermaid.Renderer{Path: script}, Strict: true}
+	err := Run(cli.Plan{Mode: cli.ModeSingle, Strict: true, Tasks: []cli.Task{{Sources: []string{source}, Target: target}}}, options)
+	if err == nil || !strings.Contains(err.Error(), "(--strict)") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, statErr := os.Stat(target); statErr == nil {
+		t.Fatal("a PDF was written although --strict failed the run")
+	}
+}

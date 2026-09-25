@@ -292,3 +292,13 @@ func TestParsePaperAndMargin(t *testing.T) {
 		}
 	}
 }
+
+func TestParseStrict(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	if plan, err := Parse([]string{"notes.md"}, fs); err != nil || plan.Strict {
+		t.Fatalf("default: Strict=%v err=%v", plan.Strict, err)
+	}
+	if plan, err := Parse([]string{"--strict", "notes.md"}, fs); err != nil || !plan.Strict {
+		t.Fatalf("--strict: Strict=%v err=%v", plan.Strict, err)
+	}
+}
