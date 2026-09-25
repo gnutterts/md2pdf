@@ -22,6 +22,9 @@ func Run(plan cli.Plan, options render.Options) error {
 		// One cache for the whole run: a diagram that appears in several files is rendered once.
 		options.Diagram = render.NewDiagramCache(options.Mermaid.ToPNG)
 	}
+	if options.Diagram != nil && options.Mermaid.Available() {
+		prerender(plan, options)
+	}
 	switch plan.Mode {
 	case cli.ModeSingle:
 		if len(plan.Tasks) != 1 || len(plan.Tasks[0].Sources) != 1 {
@@ -159,4 +162,27 @@ func documentAuthor(plan cli.Plan, first source) string {
 		return plan.Author
 	}
 	return first.meta.Get("author")
+}
+
+// prerender renders the distinct diagrams of all sources of the run at the same
+// time, before anything is drawn. A source that cannot be read is skipped here;
+// drawing reports it in the usual way.
+func prerender(plan cli.Plan, options render.Options) {
+	seen := map[string]bool{}
+	var texts []string
+	for _, task := range plan.Tasks {
+		for _, path := range task.Sources {
+			source, err := readSource(path)
+			if err != nil {
+				continue
+			}
+			for _, text := range render.DiagramTexts(source.blocks) {
+				if !seen[text] {
+					seen[text] = true
+					texts = append(texts, text)
+				}
+			}
+		}
+	}
+	render.Prerender(options.Diagram, texts, render.Workers())
 }
