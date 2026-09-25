@@ -54,6 +54,7 @@ func renderTask(plan cli.Plan, task cli.Task, options render.Options) error {
 	}
 	document := pdfout.New()
 	document.SetInfo(documentTitle(plan, task, source), documentAuthor(plan, source), plan.Creator)
+	document.SetPageNumbers(!plan.NoPageNumbers)
 	if err := render.Draw(source.blocks, document.Canvas(), options); err != nil {
 		return err
 	}
@@ -73,6 +74,7 @@ func renderMerged(plan cli.Plan, task cli.Task, options render.Options) error {
 		}
 		if i == 0 {
 			document.SetInfo(documentTitle(plan, task, source), documentAuthor(plan, source), plan.Creator)
+			document.SetPageNumbers(!plan.NoPageNumbers)
 		}
 		if i > 0 {
 			canvas.NewPage()

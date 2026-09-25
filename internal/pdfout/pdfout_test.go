@@ -758,3 +758,82 @@ func TestSetInfoWritesTitleAuthorAndCreator(t *testing.T) {
 		t.Fatal("an empty author must not be written")
 	}
 }
+
+func TestPageNumbersAppearInTheFooter(t *testing.T) {
+	document := New()
+	document.SetPageNumbers(true)
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("first")
+	canvas.NewPage()
+	canvas.Text("second")
+	canvas.NewPage()
+	canvas.Text("third")
+	target := filepath.Join(t.TempDir(), "numbers.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams := contentStreams(t, content)
+	if len(streams) != 3 {
+		t.Fatalf("%d content streams, want 3", len(streams))
+	}
+	for i, stream := range streams {
+		want := fmt.Sprintf("(%d / 3)", i+1)
+		if !bytes.Contains(stream, []byte(want)) {
+			t.Errorf("page %d has no %s", i+1, want)
+		}
+		// The footer sits in the bottom margin, below the text area (which ends 56 points above the edge).
+		y := regexp.MustCompile(`BT [\d.]+ ([\d.]+) Td \(\d / 3\)`).FindSubmatch(stream)
+		if y == nil {
+			t.Fatalf("page %d: no footer position", i+1)
+		}
+		value, _ := strconv.ParseFloat(string(y[1]), 64)
+		if value < 8 || value > 28 {
+			t.Errorf("page %d: footer baseline at y=%v, want between 8 and 28 points above the bottom edge, below the text area", i+1, value)
+		}
+	}
+}
+
+func TestPageNumbersOffLeavesNoFooter(t *testing.T) {
+	document := New()
+	document.SetPageNumbers(false)
+	document.Canvas().NewPage()
+	target := filepath.Join(t.TempDir(), "plain.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	for _, stream := range contentStreams(t, content) {
+		if bytes.Contains(stream, []byte(" / 2)")) {
+			t.Fatal("footer present although page numbers are off")
+		}
+	}
+}
+
+func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
+	document := New()
+	document.SetPageNumbers(true)
+	canvas := document.Canvas()
+	canvas.Style("Courier", true, false, 14)
+	canvas.Text("before")
+	canvas.NewPage()
+	canvas.Text("after")
+	target := filepath.Join(t.TempDir(), "font.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	second := string(contentStreams(t, content)[1])
+	at := strings.Index(second, "(after)")
+	if at < 0 {
+		t.Fatal("second page has no text")
+	}
+	before := second[:at]
+	if strings.Contains(before[strings.LastIndex(before, "BT"):], "0.500 g") {
+		t.Fatal("body text after the footer is still grey")
+	}
+}

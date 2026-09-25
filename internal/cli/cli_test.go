@@ -229,3 +229,15 @@ func TestParseTitleAndAuthor(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePageNumbers(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	plan, err := Parse([]string{"notes.md"}, fs)
+	if err != nil || plan.NoPageNumbers {
+		t.Fatalf("default: NoPageNumbers = %v, err = %v", plan.NoPageNumbers, err)
+	}
+	plan, err = Parse([]string{"--no-page-numbers", "notes.md"}, fs)
+	if err != nil || !plan.NoPageNumbers {
+		t.Fatalf("--no-page-numbers: NoPageNumbers = %v, err = %v", plan.NoPageNumbers, err)
+	}
+}

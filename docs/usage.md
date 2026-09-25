@@ -11,6 +11,7 @@ md2pdf [flags] <file.md | directory>
 | `--mermaid <path>` | Path to the Mermaid renderer; `MD2PDF_MERMAID` can also set it, and `off` disables rendering |
 | `--title <text>` | Document title; by default the `title` in the front matter, else the first level 1 heading, else the file name (the directory name when a directory is merged) |
 | `--author <text>` | Document author; by default the `author` in the front matter |
+| `--no-page-numbers` | Leave the page numbers out |
 | `--version` | Print the version |
 | `-h`, `--help` | Print usage |
 
