@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 — 2026-09-26
+
+This release draws images, and stops diagrams from keeping you waiting.
+
+### Added
+
+- Images from `![alt](path)` and from an HTML `<img src>` are drawn: PNG, JPEG and GIF, with the path relative
+  to the Markdown file, at their natural size (96 pixels to the inch) and never wider than the text. An image
+  that is missing or in another format shows its alt text in italics, with a warning (an error with
+  `--strict`). Remote images, SVG and WebP keep showing their alt text.
+
+### Changed
+
+- Mermaid diagrams are rendered up to four at a time, before the PDF is drawn. Four diagrams took 26 seconds
+  and now take 7.
+- A heading that would end a page, with its content on the next one, starts the next page instead.
+- Releases are built and published by a GitHub workflow when a version tag is pushed.
+
 ## 0.4.0 — 2026-09-25
 
 This release makes `md2pdf` behave predictably on input and renderers that do not cooperate.
