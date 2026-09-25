@@ -32,7 +32,7 @@ func TestDiagramPNG(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := New()
-	if err := document.Canvas().Diagram(pngBytes.Bytes()); err != nil {
+	if err := document.Canvas().Diagram(pngBytes.Bytes(), 1); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "diagram.pdf")
@@ -50,7 +50,7 @@ func TestDiagramPNG(t *testing.T) {
 
 func TestDiagramInvalidPNGReturnsError(t *testing.T) {
 	document := New()
-	if err := document.Canvas().Diagram([]byte("not PNG")); err == nil {
+	if err := document.Canvas().Diagram([]byte("not PNG"), 1); err == nil {
 		t.Fatal("invalid PNG did not return an error")
 	}
 }
@@ -596,7 +596,7 @@ func TestDiagramTallerThanOnePageIsScaled(t *testing.T) {
 	if err := png.Encode(&pngBytes, narrowAndTall); err != nil {
 		t.Fatal(err)
 	}
-	if err := document.Canvas().Diagram(pngBytes.Bytes()); err != nil {
+	if err := document.Canvas().Diagram(pngBytes.Bytes(), 1); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "diagram.pdf")
@@ -1276,5 +1276,38 @@ func TestIndentingBackIsExactAfterCapping(t *testing.T) {
 	content, _ := os.ReadFile(target)
 	if columns := textColumns(t, contentStream(t, content)); len(columns) == 0 || columns[0] > DefaultMargin+3 {
 		t.Fatalf("text starts at %v, want the margin %v", columns, DefaultMargin)
+	}
+}
+
+func TestDiagramScaleKeepsThePrintedSize(t *testing.T) {
+	size := func(width, height int, scale float64) (float64, float64) {
+		var pngBytes bytes.Buffer
+		if err := png.Encode(&pngBytes, image.NewRGBA(image.Rect(0, 0, width, height))); err != nil {
+			t.Fatal(err)
+		}
+		document := New()
+		if err := document.Canvas().Diagram(pngBytes.Bytes(), scale); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(t.TempDir(), "scale.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatal(err)
+		}
+		content, _ := os.ReadFile(target)
+		match := regexp.MustCompile(`([\d.]+) 0 0 ([\d.]+) [\d.]+ [\d.]+ cm`).FindSubmatch(contentStream(t, content))
+		if match == nil {
+			t.Fatal("no image placement")
+		}
+		w, _ := strconv.ParseFloat(string(match[1]), 64)
+		h, _ := strconv.ParseFloat(string(match[2]), 64)
+		return w, h
+	}
+	w1, h1 := size(200, 100, 1)
+	w2, h2 := size(400, 200, 2)
+	if w1 != w2 || h1 != h2 || w1 != 200 || h1 != 100 {
+		t.Fatalf("scale 1 draws %vx%v, scale 2 draws %vx%v; both should be 200x100", w1, h1, w2, h2)
+	}
+	if w, _ := size(200, 100, 0); w != 200 {
+		t.Fatalf("scale 0 draws %v wide, want 200 (treated as 1)", w)
 	}
 }

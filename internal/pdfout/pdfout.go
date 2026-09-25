@@ -388,8 +388,12 @@ func wrapCode(line string, limit int) []string {
 	return pieces
 }
 
-// Diagram registers and draws a PNG without a temporary file.
-func (v documentCanvas) Diagram(png []byte) error {
+// Diagram registers and draws a PNG without a temporary file. The PNG was
+// rendered at scale times the size it has on the page; a scale of 0 means 1.
+func (v documentCanvas) Diagram(png []byte, scale float64) error {
+	if scale <= 0 {
+		scale = 1
+	}
 	v.d.images++
 	name := fmt.Sprintf("diagram-%d.png", v.d.images)
 	options := fpdf.ImageOptions{ImageType: "PNG"}
@@ -400,7 +404,7 @@ func (v documentCanvas) Diagram(png []byte) error {
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
 		return errors.New("invalid PNG for diagram")
 	}
-	width := min(info.Width(), v.contentWidth())
+	width := min(info.Width()/scale, v.contentWidth())
 	height := info.Height() * width / info.Width()
 	// A diagram taller than a whole page would run over the edge and be
 	// clipped; then the page height determines the scale, not the width.

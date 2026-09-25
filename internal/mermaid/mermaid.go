@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,6 +24,7 @@ const defaultTimeout = 30 * time.Second
 type Renderer struct {
 	Path    string        // path to or name of the renderer; empty means disabled
 	Timeout time.Duration // 0 means the default of 30 seconds
+	Scale   float64       // device scale factor passed as -s; 0 leaves the renderer's own default
 }
 
 // Available reports whether a renderer is specified.
@@ -42,6 +45,27 @@ func Choose(flag, environment string) Renderer {
 		path = ""
 	}
 	return Renderer{Path: path}
+}
+
+// DefaultScale is the device scale factor used when none is chosen: at scale 1 a
+// diagram is grainy on paper.
+const DefaultScale = 2.0
+
+// ChooseScale determines the scale factor from flag and environment, in that
+// order; empty means DefaultScale. The value must be between 1 and 4.
+func ChooseScale(flag, environment string) (float64, error) {
+	text := flag
+	if text == "" {
+		text = environment
+	}
+	if text == "" {
+		return DefaultScale, nil
+	}
+	scale, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	if err != nil || math.IsNaN(scale) || scale < 1 || scale > 4 {
+		return 0, fmt.Errorf("scale %q must be a number between 1 and 4 (--scale or MD2PDF_SCALE)", text)
+	}
+	return scale, nil
 }
 
 // notExecutable reports whether a file lacks the executable permission bit.
@@ -95,7 +119,11 @@ func (r Renderer) ToPNG(diagram string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, path, "-i", input, "-o", output, "-b", "white", "-q")
+	arguments := []string{"-i", input, "-o", output, "-b", "white", "-q"}
+	if r.Scale > 0 {
+		arguments = append(arguments, "-s", strconv.FormatFloat(r.Scale, 'f', -1, 64))
+	}
+	cmd := exec.CommandContext(ctx, path, arguments...)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {

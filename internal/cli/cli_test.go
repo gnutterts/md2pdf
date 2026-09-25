@@ -368,3 +368,13 @@ func TestParseRefusesAnOutputThatIsTheSameFileOnDisk(t *testing.T) {
 		})
 	}
 }
+
+func TestParseScale(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	if plan, err := Parse([]string{"--scale", "3", "notes.md"}, fs); err != nil || plan.Scale != "3" {
+		t.Fatalf("Scale=%q err=%v", plan.Scale, err)
+	}
+	if _, err := Parse([]string{"notes.md", "--scale"}, fs); err == nil || !strings.Contains(err.Error(), "--scale") {
+		t.Fatalf("missing value: err = %v", err)
+	}
+}

@@ -67,3 +67,31 @@ func TestVersionAndHelpAreNotErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestAnInvalidScaleIsRefused(t *testing.T) {
+	err := runWith([]string{"--scale", "9", sourceFile(t)}, func(cli.Plan, render.Options) error { t.Fatal("executor called"); return nil })
+	if err == nil || !strings.Contains(err.Error(), "between 1 and 4") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTheScaleComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("MD2PDF_SCALE", "3")
+	var got float64
+	err := runWith([]string{sourceFile(t)}, func(_ cli.Plan, options render.Options) error { got = options.Mermaid.Scale; return nil })
+	if err != nil || got != 3 {
+		t.Fatalf("err = %v, Scale = %v", err, got)
+	}
+}
+
+func TestTheScaleDefaultsToTwoAndTheFlagBeatsTheEnvironment(t *testing.T) {
+	var got float64
+	capture := func(_ cli.Plan, options render.Options) error { got = options.Mermaid.Scale; return nil }
+	if err := runWith([]string{sourceFile(t)}, capture); err != nil || got != 2 {
+		t.Fatalf("default: err = %v, Scale = %v", err, got)
+	}
+	t.Setenv("MD2PDF_SCALE", "3")
+	if err := runWith([]string{"--scale", "1.5", sourceFile(t)}, capture); err != nil || got != 1.5 {
+		t.Fatalf("flag: err = %v, Scale = %v", err, got)
+	}
+}
