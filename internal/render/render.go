@@ -41,6 +41,8 @@ type Canvas interface {
 	HangingIndent()
 	CodeBlock(lines []string)
 	Rule()
+	// Bookmark adds an entry to the outline of the PDF at the current position.
+	Bookmark(text string, level int)
 	// Table draws a complete table: the canvas determines column widths and
 	// page breaks, because only there are the font metrics known.
 	Table(rows []markdown.Row)
@@ -115,6 +117,7 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
 		canvas.Style(base.family, base.bold, base.italic, base.size)
+		canvas.Bookmark(markdown.PlainText(block.Spans), block.Level)
 		spans(canvas, block.Spans, base)
 		canvas.LineBreak(heightFor(base.size))
 		canvas.Indent(-indent)

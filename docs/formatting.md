@@ -15,6 +15,7 @@
   page, and formatting and links inside cells.
 - **Thematic breaks**.
 - **Page numbers** (`n / N`, centred in grey below the text); turn them off with `--no-page-numbers`.
+- **Bookmarks**: every heading becomes an entry in the outline of the PDF viewer.
 - **Mermaid diagrams**, rendered as images; see [Usage](usage.md#mermaid).
 - **Front matter** in YAML (`---`), TOML (`+++`), or a Pandoc title block (`%`) is left out of the PDF; its `title` and `author` become the document title and author.
 - **Raw HTML** contributes its text: `<br>` breaks the line, and the text of an HTML block — including
