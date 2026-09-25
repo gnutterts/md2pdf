@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Tag matches the version in the code
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          in_code="$(grep -o 'md2pdf [0-9][0-9.]*' cmd/md2pdf/main.go | head -n 1 | cut -d' ' -f2)"
+          if [ "$version" != "$in_code" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $in_code in cmd/md2pdf/main.go" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build and package
+        run: |
+          set -eu
+          mkdir dist
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            name="md2pdf-$os-$arch"
+            exe="md2pdf"
+            if [ "$os" = "windows" ]; then exe="md2pdf.exe"; fi
+            mkdir -p "dist/$name"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags='-s -w' -o "dist/$name/$exe" ./cmd/md2pdf
+            cp LICENSE CHANGELOG.md THIRD-PARTY-NOTICES.md README.md "dist/$name/"
+            cp -R docs "dist/$name/docs"
+            if [ "$os" = "windows" ]; then
+              (cd dist && zip -qr "$name.zip" "$name")
+            else
+              tar -czf "dist/$name.tar.gz" -C dist "$name"
+            fi
+            rm -rf "dist/$name"
+          done
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS.txt)
+
+      - name: Release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## " v " " { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No section for $version in CHANGELOG.md" >&2
+            exit 1
+          fi
+          cat >> notes.md <<NOTES
+
+          ### Installing
+
+          Download the archive for your platform below and verify it against \`SHA256SUMS.txt\`, or run
+          \`go install github.com/gnutterts/md2pdf/cmd/md2pdf@$GITHUB_REF_NAME\`. Each archive contains the binary, the
+          README, the changelog, the documentation, the licence, and the third-party notices.
+          NOTES
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS.txt \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md
