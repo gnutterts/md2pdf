@@ -307,28 +307,29 @@ func spans(canvas Canvas, spans []markdown.Span, base baseStyle) {
 	canvas.Strike(false)
 }
 
-type diagramResult struct {
-	png []byte
-	err error
+type diagramEntry struct {
+	once sync.Once
+	png  []byte
+	err  error
 }
 
 // NewDiagramCache wraps produce so that every distinct diagram text is
-// rendered once. Failures are remembered too: a broken diagram does not cost
-// its time limit again, although every place it appears still gets a warning.
+// rendered once, also when several goroutines ask for the same text at the same
+// time: the others wait for the first. Failures are remembered too: a broken
+// diagram does not cost its time limit again, although every place it appears
+// still gets a warning.
 func NewDiagramCache(produce func(text string) ([]byte, error)) func(text string) ([]byte, error) {
 	var mutex sync.Mutex
-	results := map[string]diagramResult{}
+	entries := map[string]*diagramEntry{}
 	return func(text string) ([]byte, error) {
 		mutex.Lock()
-		result, ok := results[text]
-		mutex.Unlock()
-		if ok {
-			return result.png, result.err
+		entry, ok := entries[text]
+		if !ok {
+			entry = &diagramEntry{}
+			entries[text] = entry
 		}
-		png, err := produce(text)
-		mutex.Lock()
-		results[text] = diagramResult{png: png, err: err}
 		mutex.Unlock()
-		return png, err
+		entry.once.Do(func() { entry.png, entry.err = produce(text) })
+		return entry.png, entry.err
 	}
 }

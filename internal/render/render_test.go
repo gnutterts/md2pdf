@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
@@ -530,5 +533,40 @@ func TestWithoutADiagramFunctionTheRendererIsUsed(t *testing.T) {
 	block := []markdown.Block{{Kind: markdown.CodeBlock, Language: "mermaid", Lines: []string{"graph TD"}}}
 	if err := Draw(block, canvas, Options{Mermaid: mermaid.Renderer{Path: path}}); err != nil || !contains(canvas.calls, "diagram") {
 		t.Fatalf("err = %v, calls = %v", err, canvas.calls)
+	}
+}
+
+func TestTheDiagramCacheRendersOnceUnderConcurrency(t *testing.T) {
+	var calls atomic.Int32
+	release := make(chan struct{})
+	cache := NewDiagramCache(func(text string) ([]byte, error) {
+		calls.Add(1)
+		<-release // hold the first render until every goroutine is waiting
+		return []byte("png:" + text), nil
+	})
+	const goroutines = 16
+	var wait sync.WaitGroup
+	results := make([]string, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			png, err := cache("graph TD")
+			if err != nil {
+				t.Error(err)
+			}
+			results[i] = string(png)
+		}()
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wait.Wait()
+	if calls.Load() != 1 {
+		t.Fatalf("%d renders, want 1", calls.Load())
+	}
+	for i, result := range results {
+		if result != "png:graph TD" {
+			t.Errorf("goroutine %d got %q", i, result)
+		}
 	}
 }
