@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/gnutterts/md2pdf/internal/cli"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
@@ -33,7 +34,7 @@ func pdfPages(t *testing.T, content []byte) (objects []string, streams []string)
 			t.Fatal(err)
 		}
 		data, _ := io.ReadAll(reader)
-		streams = append(streams, string(data))
+		streams = append(streams, string(decodeText(data)))
 	}
 	return objects, streams
 }
@@ -160,4 +161,43 @@ func TestTOCWarnsOnceForAFailedDiagram(t *testing.T) {
 	if len(warnings) != 1 {
 		t.Fatalf("warnings = %q, want one", warnings)
 	}
+}
+
+// decodeText rewrites the text strings of a content stream, which fpdf writes
+// as escaped UTF-16BE for the embedded fonts, into plain UTF-8, so that tests
+// can look for "(word)".
+func decodeText(stream []byte) []byte {
+	var out bytes.Buffer
+	for i := 0; i < len(stream); i++ {
+		if stream[i] != '(' {
+			out.WriteByte(stream[i])
+			continue
+		}
+		var raw []byte
+		j := i + 1
+		for ; j < len(stream) && stream[j] != ')'; j++ {
+			if stream[j] == '\\' && j+1 < len(stream) {
+				j++
+				switch stream[j] {
+				case 'n':
+					raw = append(raw, '\n')
+				case 'r':
+					raw = append(raw, '\r')
+				default:
+					raw = append(raw, stream[j])
+				}
+				continue
+			}
+			raw = append(raw, stream[j])
+		}
+		units := make([]uint16, 0, len(raw)/2)
+		for k := 0; k+1 < len(raw); k += 2 {
+			units = append(units, uint16(raw[k])<<8|uint16(raw[k+1]))
+		}
+		out.WriteByte('(')
+		out.WriteString(string(utf16.Decode(units)))
+		out.WriteByte(')')
+		i = j
+	}
+	return out.Bytes()
 }
