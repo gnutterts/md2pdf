@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/gnutterts/md2pdf/internal/cli"
 	"github.com/gnutterts/md2pdf/internal/mermaid"
@@ -22,7 +23,19 @@ func main() {
 	}
 }
 
-func run(args []string) error {
+func run(args []string) error { return runWith(args, runner.Run) }
+
+// runWith runs md2pdf with the given executor. A panic anywhere below becomes
+// an ordinary error ("internal error: ..."); MD2PDF_DEBUG=1 adds the stack.
+func runWith(args []string, execute func(cli.Plan, render.Options) error) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("internal error: %v", recovered)
+			if os.Getenv("MD2PDF_DEBUG") != "" {
+				fmt.Fprintln(os.Stderr, string(debug.Stack()))
+			}
+		}
+	}()
 	plan, err := cli.Parse(args, cli.OSFileSystem{})
 	if errors.Is(err, cli.ErrHelp) {
 		fmt.Println(cli.Usage)
@@ -43,5 +56,5 @@ func run(args []string) error {
 			fmt.Fprintln(os.Stderr, "warning:", message)
 		},
 	}
-	return runner.Run(plan, options)
+	return execute(plan, options)
 }
