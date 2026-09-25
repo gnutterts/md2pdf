@@ -300,6 +300,9 @@ func TestParseStrict(t *testing.T) {
 	}
 	if plan, err := Parse([]string{"--strict", "notes.md"}, fs); err != nil || !plan.Strict {
 		t.Fatalf("--strict: Strict=%v err=%v", plan.Strict, err)
+	}
+}
+
 func TestParseProtectsExistingOutput(t *testing.T) {
 	fs := fakeFileSystem{
 		paths: map[string]bool{"notes.md": false, "other.md": false, "keep.txt": false, "old.pdf": false, "docs": true},
