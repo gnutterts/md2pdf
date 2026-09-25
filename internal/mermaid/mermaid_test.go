@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -225,6 +226,47 @@ func TestChooseScale(t *testing.T) {
 		}
 		if err != nil || got != test.want {
 			t.Errorf("ChooseScale(%q, %q) = %v, %v, want %v", test.flag, test.environment, got, err, test.want)
+		}
+	}
+}
+
+func TestToPNGRefusesAnOversizedOutput(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		size int64
+		bad  bool
+	}{{"at the limit", MaxPNGSize, false}, {"one byte over", MaxPNGSize + 1, true}} {
+		t.Run(test.name, func(t *testing.T) {
+			script := writeScript(t, paths()+`dd if=/dev/null of="$out" bs=1 seek=`+strconv.FormatInt(test.size, 10)+` 2>/dev/null`)
+			_, err := (Renderer{Path: script, Timeout: 20 * time.Second}).ToPNG("graph TD")
+			if test.bad && (err == nil || !strings.Contains(err.Error(), "too large")) {
+				t.Fatalf("err = %v, want a too-large error", err)
+			}
+			if !test.bad && err != nil {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
+func TestChooseTimeout(t *testing.T) {
+	for _, test := range []struct {
+		flag, environment string
+		want              time.Duration
+		bad               bool
+	}{
+		{"", "", 30 * time.Second, false}, {"45s", "", 45 * time.Second, false}, {"", "2m", 2 * time.Minute, false},
+		{"5s", "2m", 5 * time.Second, false}, {"abc", "", 0, true}, {"0s", "", 0, true}, {"-5s", "", 0, true}, {"30", "", 0, true},
+	} {
+		got, err := ChooseTimeout(test.flag, test.environment)
+		if test.bad {
+			if err == nil {
+				t.Errorf("ChooseTimeout(%q, %q) = %v, want an error", test.flag, test.environment, got)
+			}
+			continue
+		}
+		if err != nil || got != test.want {
+			t.Errorf("ChooseTimeout(%q, %q) = %v, %v, want %v", test.flag, test.environment, got, err, test.want)
 		}
 	}
 }

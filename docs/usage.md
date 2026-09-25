@@ -12,6 +12,7 @@ md2pdf [flags] <file.md | directory>
 | `--title <text>` | Document title; by default the `title` in the front matter, else the first level 1 heading, else the file name (the directory name when a directory is merged) |
 | `--author <text>` | Document author; by default the `author` in the front matter |
 | `--scale <n>` | Sharpness of Mermaid diagrams, from 1 to 4; default 2. `MD2PDF_SCALE` can also set it |
+| `--mermaid-timeout <duration>` | Time limit per diagram, such as `45s` or `2m`; default `30s`. `MD2PDF_MERMAID_TIMEOUT` can also set it |
 | `--strict` | Treat every warning as an error: stop at the first one, write no PDF, and exit with code 1 |
 | `--force` | Allow `-o` to overwrite an existing file that is not a PDF |
 | `--no-page-numbers` | Leave the page numbers out |
@@ -60,6 +61,6 @@ the batch stops at the first failure.
 A diagram that appears more than once, in one file or across the files of a directory, is rendered once.
 
 Mermaid blocks are rendered with `mmdc` by default. Select another renderer with `--mermaid <path>` or
-`MD2PDF_MERMAID`; `off` disables rendering. If the renderer is missing or fails, a warning is written to
+`MD2PDF_MERMAID`; `off` disables rendering. A diagram whose image is larger than 64 MiB is refused like a failed one. If the renderer is missing or fails, a warning is written to
 stderr, the diagram remains visible as a code block, and the exit code stays 0. With `--strict` the warning
 is an error instead, and no PDF is written.

@@ -378,3 +378,13 @@ func TestParseScale(t *testing.T) {
 		t.Fatalf("missing value: err = %v", err)
 	}
 }
+
+func TestParseMermaidTimeout(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	if plan, err := Parse([]string{"--mermaid-timeout", "45s", "notes.md"}, fs); err != nil || plan.MermaidTimeout != "45s" {
+		t.Fatalf("MermaidTimeout=%q err=%v", plan.MermaidTimeout, err)
+	}
+	if _, err := Parse([]string{"notes.md", "--mermaid-timeout"}, fs); err == nil || !strings.Contains(err.Error(), "--mermaid-timeout") {
+		t.Fatalf("missing value: err = %v", err)
+	}
+}
