@@ -10,7 +10,44 @@ import (
 // htmlText extracts visible text from a raw HTML block and returns it as
 // paragraphs. Formatting is ignored; only text, line breaks and cell
 // separators are kept.
-func htmlText(html string) []string {
+func htmlText(html string) []string { return htmlTextWith(html, nil) }
+
+// imageMark stands in the paragraph list for an image that became its own part.
+const imageMark = "\x00image"
+
+// htmlPart is a paragraph of text or, when src is set, an image.
+type htmlPart struct {
+	text string
+	src  string
+	alt  string
+}
+
+// htmlParts is htmlText that keeps an <img> whose src keep accepts as a part of
+// its own, in document order, instead of turning it into its alt text.
+func htmlParts(html string, keep func(src string) bool) []htmlPart {
+	var images []htmlPart
+	take := func(raw string) bool {
+		src, ok := htmlAttribute(raw, "src")
+		if !ok || !keep(src) {
+			return false
+		}
+		alt, _ := htmlAttribute(raw, "alt")
+		images = append(images, htmlPart{src: src, alt: alt})
+		return true
+	}
+	var parts []htmlPart
+	for _, text := range htmlTextWith(html, take) {
+		if text == imageMark {
+			parts = append(parts, images[0])
+			images = images[1:]
+			continue
+		}
+		parts = append(parts, htmlPart{text: text})
+	}
+	return parts
+}
+
+func htmlTextWith(html string, image func(raw string) bool) []string {
 	var paragraphs []string
 	var current []byte
 	for i := 0; i < len(html); {
@@ -49,7 +86,7 @@ func htmlText(html string) []string {
 				continue
 			}
 		} else {
-			processHTMLTag(name, closing, html[i+1:end], &current, &paragraphs)
+			processHTMLTag(name, closing, html[i+1:end], &current, &paragraphs, image)
 		}
 		i = end + 1
 	}
@@ -101,11 +138,16 @@ func isHTMLNameByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
-func processHTMLTag(name string, closing bool, raw string, current *[]byte, paragraphs *[]string) {
+func processHTMLTag(name string, closing bool, raw string, current *[]byte, paragraphs *[]string, image func(raw string) bool) {
 	switch name {
 	case "br":
 		appendHTMLBreak(current)
 	case "img":
+		if image != nil && image(raw) {
+			flushHTMLParagraph(current, paragraphs)
+			*paragraphs = append(*paragraphs, imageMark)
+			return
+		}
 		if alt, ok := htmlAttribute(raw, "alt"); ok && alt != "" {
 			appendHTMLText(current, alt)
 		}

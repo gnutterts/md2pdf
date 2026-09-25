@@ -189,8 +189,18 @@ func walkBlock(n ast.Node, source []byte, out *[]Block, p walkParams) {
 	case *ast.ThematicBreak:
 		*out = append(*out, Block{Kind: Rule, Depth: p.depth, InItem: p.inItem, Quote: p.quote})
 	case *ast.HTMLBlock:
-		for _, text := range htmlText(htmlBlockText(v, source)) {
-			*out = append(*out, Block{Kind: Paragraph, Depth: p.depth, InItem: p.inItem, Quote: p.quote, Spans: []Span{{Text: text}}})
+		keep := func(src string) bool { _, ok := localPath(src, p.dir); return ok }
+		for _, part := range htmlParts(htmlBlockText(v, source), keep) {
+			if part.src != "" {
+				path, _ := localPath(part.src, p.dir)
+				image := Block{Kind: Image, Path: path, Depth: p.depth, InItem: p.inItem, Quote: p.quote}
+				if part.alt != "" {
+					image.Spans = []Span{{Text: part.alt}}
+				}
+				*out = append(*out, image)
+				continue
+			}
+			*out = append(*out, Block{Kind: Paragraph, Depth: p.depth, InItem: p.inItem, Quote: p.quote, Spans: []Span{{Text: part.text}}})
 		}
 	case *extast.Table:
 		block := table(v, source)
@@ -433,7 +443,12 @@ func localImage(n ast.Node, dir string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	destination := string(image.Destination)
+	return localPath(string(image.Destination), dir)
+}
+
+// localPath resolves an image destination against dir, or reports that it is
+// not a local file.
+func localPath(destination, dir string) (string, bool) {
 	if destination == "" || urlScheme.MatchString(destination) || strings.HasPrefix(destination, "//") {
 		return "", false
 	}
@@ -442,6 +457,9 @@ func localImage(n ast.Node, dir string) (string, bool) {
 	}
 	if unescaped, err := url.PathUnescape(destination); err == nil {
 		destination = unescaped
+	}
+	if destination == "" {
+		return "", false
 	}
 	path := filepath.FromSlash(destination)
 	if !filepath.IsAbs(path) && dir != "" {

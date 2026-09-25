@@ -16,6 +16,9 @@
 - **Thematic breaks**.
 - **Page numbers** (`n / N`, centred in grey below the text); turn them off with `--no-page-numbers`.
 - **Bookmarks**: every heading becomes an entry in the outline of the PDF viewer.
+- **Images** in PNG, JPEG or GIF, from `![alt](path)` or an HTML `<img src>`, with the path relative to the
+  Markdown file. An image is drawn at its natural size (96 pixels to the inch) and never wider than the text.
+  An image that is missing or in another format shows its alt text in italics, with a warning.
 - **Mermaid diagrams**, rendered as images; see [Usage](usage.md#mermaid).
 - **Front matter** in YAML (`---`), TOML (`+++`), or a Pandoc title block (`%`) is left out of the PDF; its `title` and `author` become the document title and author.
 - **Raw HTML** contributes its text: `<br>` breaks the line, and the text of an HTML block — including
@@ -28,7 +31,8 @@ transliterated where possible — `→` becomes `->` — and otherwise replaced 
 
 ## Known limitations
 
-- Images show their alt text; the image itself is not drawn yet.
+- Remote images (`https://…`), SVG and WebP show their alt text: md2pdf reads no network and fpdf cannot draw
+  those formats. An image inside a heading, a table cell or a link also shows its alt text.
 - Footnotes, definition lists, math, and emoji shortcodes appear as plain text.
 - Formatting from HTML (bold, alignment, colour) is not applied; only its text is kept.
 - Characters outside cp1252, such as Cyrillic, Greek, or CJK, become question marks.

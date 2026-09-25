@@ -540,7 +540,9 @@ func contentStreams(t *testing.T, pdf []byte) [][]byte {
 		}
 		reader, err := zlib.NewReader(bytes.NewReader(remaining[start : start+end]))
 		if err != nil {
-			t.Fatal(err)
+			// Not a Flate stream, such as the data of a JPEG image: not page content.
+			remaining = remaining[start+end+len("\nendstream"):]
+			continue
 		}
 		stream, err := io.ReadAll(reader)
 		if err != nil {
