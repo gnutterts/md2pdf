@@ -441,6 +441,9 @@ func TestStrictTurnsAWarningIntoAnErrorAndStops(t *testing.T) {
 	if contains(canvas.calls, "text:after:Helvetica::11") {
 		t.Fatalf("drawing went on after the strict error: %v", canvas.calls)
 	}
+	if contains(canvas.calls, "code:graph TD") {
+		t.Fatalf("the fallback code block was drawn although --strict failed the run: %v", canvas.calls)
+	}
 }
 
 func TestStrictStopsInsideAQuote(t *testing.T) {

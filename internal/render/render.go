@@ -194,6 +194,9 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 			}
 			canvas.Indent(-indent)
 			state.warn(options, fmt.Sprintf("could not draw mermaid diagram: %v", err))
+			if state.err != nil {
+				return // strict: do not draw the fallback either
+			}
 		}
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
