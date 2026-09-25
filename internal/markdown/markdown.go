@@ -6,6 +6,7 @@ package markdown
 import (
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -422,6 +423,9 @@ func spansWith(nodes []ast.Node, source []byte, bold, italic, code bool, url str
 	return out
 }
 
+// urlScheme matches a URL scheme such as https: or data:; one letter is a Windows drive.
+var urlScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]+:`)
+
 // localImage returns the resolved path of an image that md2pdf can draw from
 // the file system; remote images and data URLs are not, and keep their alt text.
 func localImage(n ast.Node, dir string) (string, bool) {
@@ -430,9 +434,11 @@ func localImage(n ast.Node, dir string) (string, bool) {
 		return "", false
 	}
 	destination := string(image.Destination)
-	lower := strings.ToLower(destination)
-	if destination == "" || strings.Contains(lower, "://") || strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "//") || strings.HasPrefix(lower, "mailto:") {
+	if destination == "" || urlScheme.MatchString(destination) || strings.HasPrefix(destination, "//") {
 		return "", false
+	}
+	if cut := strings.IndexAny(destination, "?#"); cut >= 0 {
+		destination = destination[:cut]
 	}
 	if unescaped, err := url.PathUnescape(destination); err == nil {
 		destination = unescaped
@@ -504,7 +510,7 @@ func splitAtImages(n ast.Node, source []byte, out *[]Block, p walkParams) {
 // trimSpans removes the white space that separated the text from an image.
 func trimSpans(spans []Span) []Span {
 	for len(spans) > 0 {
-		spans[0].Text = strings.TrimLeft(spans[0].Text, " \n")
+		spans[0].Text = strings.TrimLeft(spans[0].Text, " \t\r\n")
 		if spans[0].Text != "" {
 			break
 		}
@@ -512,7 +518,7 @@ func trimSpans(spans []Span) []Span {
 	}
 	for len(spans) > 0 {
 		last := len(spans) - 1
-		spans[last].Text = strings.TrimRight(spans[last].Text, " \n")
+		spans[last].Text = strings.TrimRight(spans[last].Text, " \t\r\n")
 		if spans[last].Text != "" {
 			break
 		}

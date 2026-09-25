@@ -49,6 +49,8 @@ func TestImageBecomesABlock(t *testing.T) {
 		{"absolute", "![a](/tmp/p.png)\n", []string{"I:" + filepath.FromSlash("/tmp/p.png") + "|a"}},
 		{"escaped", "![a](my%20pic.png)\n", []string{"I:" + filepath.Join(dir, "my pic.png") + "|a"}},
 		{"remote stays text", "see ![remote](https://x.org/p.png) here\n", []string{"P:see remote here"}},
+		{"query and fragment are dropped", "![a](p.png?v=2#top)\n", []string{"I:" + filepath.Join(dir, "p.png") + "|a"}},
+		{"other schemes stay text", "![a](file:///etc/p.png) ![b](javascript:x)\n", []string{"P:a b"}},
 		{"data stays text", "![d](data:image/png;base64,AAAA)\n", []string{"P:d"}},
 		{"in a heading stays text", "# Title ![a](p.png)\n", []string{"H:Title a"}},
 		{"in a link stays text", "[![a](p.png)](https://x.org)\n", []string{"P:a"}},
