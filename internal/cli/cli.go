@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gnutterts/md2pdf/internal/font"
 	"github.com/gnutterts/md2pdf/internal/pdfout"
 )
 
@@ -46,6 +47,9 @@ type Plan struct {
 	MermaidTimeout string
 	// Scale is the raw --scale value; mermaid.ChooseScale validates it.
 	Scale string
+	// Font and MonoFont are font directories from --font and --font-mono.
+	Font     string
+	MonoFont string
 	// TOC puts a table of contents first (--toc); TOCDepth is the deepest heading
 	// level in it (--toc-depth, 1 to 6; 0 means 3).
 	TOC      bool
@@ -100,7 +104,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--toc] [--toc-depth n] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--font dir] [--font-mono dir] [--toc] [--toc-depth n] [--strict] [--force] [--no-page-numbers] [--scale n] [--mermaid-timeout duration] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -133,6 +137,14 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
 	plan.TOC = f.toc
+	for _, dir := range []string{f.font, f.monoFont} {
+		if dir != "" {
+			if err := font.CheckDir(dir); err != nil {
+				return Plan{}, err
+			}
+		}
+	}
+	plan.Font, plan.MonoFont = f.font, f.monoFont
 	if f.tocDepth != nil {
 		depth, err := strconv.Atoi(*f.tocDepth)
 		if err != nil || depth < 1 || depth > 6 {
@@ -161,6 +173,8 @@ type flags struct {
 	author    string
 	noNumbers bool
 	toc       bool
+	font      string
+	monoFont  string
 	tocDepth  *string
 	scale     string
 	timeout   string
@@ -204,6 +218,10 @@ func parseArgs(args []string) (flags, error) {
 			}
 			i++
 			f.mermaid = args[i]
+		case "--font":
+			f.font, err = value(&i, "--font")
+		case "--font-mono":
+			f.monoFont, err = value(&i, "--font-mono")
 		case "--toc":
 			f.toc = true
 		case "--toc-depth":

@@ -13,6 +13,8 @@ md2pdf [flags] <file.md | directory>
 | `--author <text>` | Document author; by default the `author` in the front matter |
 | `--scale <n>` | Sharpness of Mermaid diagrams, from 1 to 4; default 2. `MD2PDF_SCALE` can also set it |
 | `--mermaid-timeout <duration>` | Time limit per diagram, such as `45s` or `2m`; default `30s`. `MD2PDF_MERMAID_TIMEOUT` can also set it |
+| `--font <dir>` | Use your own font for text instead of DejaVu Sans; see [Fonts](#fonts). `MD2PDF_FONT` can also set it |
+| `--font-mono <dir>` | The same for code, instead of DejaVu Sans Mono. `MD2PDF_FONT_MONO` can also set it |
 | `--toc` | Start the PDF with a clickable table of contents |
 | `--toc-depth <n>` | Deepest heading level in the table of contents, 1 to 6; default 3. Implies `--toc` |
 | `--strict` | Treat every warning as an error: stop at the first one, write no PDF, and exit with code 1 |
@@ -57,6 +59,24 @@ In merged mode, every source file starts on a new page. With `--separate`, an ou
 not yet exist is created. A file that cannot be read or written is skipped with a warning and the other
 files are still made; the run then ends with `error: 1 of 13 files failed` and exit code 1. With `--strict`
 the batch stops at the first failure.
+
+## Fonts
+
+Text is set in DejaVu Sans and code in DejaVu Sans Mono, both built into `md2pdf`. For characters those fonts
+lack, such as Chinese, Japanese or Korean, or for a house style, point `--font` (text) or `--font-mono` (code)
+at a directory with TrueType files named:
+
+| File | Used for |
+|---|---|
+| `Regular.ttf` | Required: ordinary text |
+| `Bold.ttf` | Bold text and headings |
+| `Italic.ttf` | Italic text and quotes |
+| `BoldItalic.ttf` | Bold italic text |
+
+A missing style falls back to `Regular.ttf`, so without `Bold.ttf` headings are not bold. Only TrueType
+outlines can be embedded: most `.otf` files use PostScript outlines and are refused with a message. Only the
+characters a document uses end up in the PDF, so even a large font adds little to it. For example, Noto Sans
+CJK, converted to TrueType, covers Chinese, Japanese and Korean.
 
 ## Table of contents
 

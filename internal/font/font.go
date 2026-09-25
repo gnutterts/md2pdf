@@ -6,8 +6,14 @@
 package font
 
 import (
+	"bytes"
 	"embed"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/go-pdf/fpdf"
 )
 
 //go:embed *.ttf
@@ -31,4 +37,92 @@ func Bytes(family, style string) ([]byte, error) {
 		return nil, fmt.Errorf("unknown font style %q", style)
 	}
 	return files.ReadFile(base + suffix + ".ttf")
+}
+
+// Files a font directory for --font or --font-mono holds. Only Regular.ttf is
+// required; a missing style falls back to it.
+var styleFiles = map[string]string{"": "Regular.ttf", "B": "Bold.ttf", "I": "Italic.ttf", "BI": "BoldItalic.ttf"}
+
+// FromDir returns the TrueType data of a style from a font directory, or of
+// Regular.ttf when that style is missing.
+func FromDir(dir, style string) ([]byte, error) {
+	name, ok := styleFiles[style]
+	if !ok {
+		return nil, fmt.Errorf("unknown font style %q", style)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if errors.Is(err, os.ErrNotExist) && style != "" {
+		name = styleFiles[""]
+		data, err = os.ReadFile(filepath.Join(dir, name))
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := checkTrueType(data); err != nil {
+		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, name), err)
+	}
+	return data, nil
+}
+
+// CheckDir reports whether dir is a usable font directory: it must hold a
+// TrueType Regular.ttf, and every other style file present must be TrueType too.
+func CheckDir(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("font directory %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("font directory %q is not a directory", dir)
+	}
+	for _, style := range []string{"", "B", "I", "BI"} {
+		path := filepath.Join(dir, styleFiles[style])
+		data, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) && style != "" {
+			continue
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("font directory %q needs Regular.ttf", dir)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if err := checkTrueType(data); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if err := tryFont(data); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// checkTrueType accepts TrueType outlines, the only kind fpdf can embed.
+func checkTrueType(data []byte) error {
+	switch {
+	case bytes.HasPrefix(data, []byte{0, 1, 0, 0}), bytes.HasPrefix(data, []byte("true")):
+		return nil
+	case bytes.HasPrefix(data, []byte("OTTO")):
+		return errors.New("fonts with PostScript outlines (most .otf files) cannot be embedded; use a TrueType .ttf")
+	default:
+		return errors.New("not a TrueType font")
+	}
+}
+
+// tryFont loads a font into a scratch fpdf document, so that a file fpdf cannot
+// parse is reported here and not as an error when the PDF is written.
+func tryFont(data []byte) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("cannot read the font: %v", recovered)
+		}
+	}()
+	pdf := fpdf.New("P", "pt", "A4", "")
+	pdf.AddUTF8FontFromBytes("trial", "", data)
+	pdf.AddPage()
+	pdf.SetFont("trial", "", 11)
+	pdf.Write(15, "Aa")
+	if err := pdf.Error(); err != nil {
+		return fmt.Errorf("cannot read the font: %w", err)
+	}
+	return nil
 }

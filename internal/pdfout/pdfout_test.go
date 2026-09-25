@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -1434,5 +1435,38 @@ func TestAQuoteOpeningWithAHeadingLeavesNoEmptyBar(t *testing.T) {
 	}
 	if !bar.Match(streams[1]) {
 		t.Fatal("page 2 has no quote bar")
+	}
+}
+
+func TestAFontDirectoryReplacesTheEmbeddedFont(t *testing.T) {
+	fpdfDir, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/go-pdf/fpdf").Output()
+	if err != nil {
+		t.Skipf("cannot find the fpdf module: %v", err)
+	}
+	condensed := filepath.Join(strings.TrimSpace(string(fpdfDir)), "font", "DejaVuSansCondensed.ttf")
+	data, err := os.ReadFile(condensed)
+	if err != nil {
+		t.Skipf("no test font: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Regular.ttf"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	document := NewWithLayout(Layout{Font: dir})
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 11) // no Bold.ttf: falls back to Regular
+	canvas.Text("custom")
+	canvas.Style("Courier", false, false, 9)
+	canvas.Text("code stays DejaVu Sans Mono")
+	target := filepath.Join(t.TempDir(), "custom.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	if !bytes.Contains(content, []byte("/BaseFont /utf8dejavusanscustomB")) || !bytes.Contains(content, []byte("/BaseFont /utf8dejavusansmono")) {
+		t.Fatalf("fonts: %s", regexp.MustCompile(`/BaseFont /\S+`).FindAll(content, -1))
+	}
+	if bytes.Contains(content, []byte("/BaseFont /utf8dejavusansB")) {
+		t.Fatal("the embedded text font is still used")
 	}
 }

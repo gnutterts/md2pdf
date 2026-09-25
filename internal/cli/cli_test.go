@@ -4,6 +4,7 @@ package cli
 
 import (
 	"errors"
+	"github.com/gnutterts/md2pdf/internal/font"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -401,5 +402,19 @@ func TestParseTOC(t *testing.T) {
 		if _, err := Parse([]string{"--toc-depth", bad, "notes.md"}, fs); err == nil || !strings.Contains(err.Error(), "1 to 6") {
 			t.Errorf("--toc-depth %s: err = %v", bad, err)
 		}
+	}
+}
+
+func TestParseFontDirectories(t *testing.T) {
+	dir := t.TempDir()
+	regular, _ := font.Bytes(font.Sans, "")
+	os.WriteFile(filepath.Join(dir, "Regular.ttf"), regular, 0o600)
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	plan, err := Parse([]string{"--font", dir, "--font-mono", dir, "notes.md"}, fs)
+	if err != nil || plan.Font != dir || plan.MonoFont != dir {
+		t.Fatalf("plan = %+v, err = %v", plan, err)
+	}
+	if _, err := Parse([]string{"--font", t.TempDir(), "notes.md"}, fs); err == nil || !strings.Contains(err.Error(), "Regular.ttf") {
+		t.Fatalf("an empty directory: err = %v", err)
 	}
 }
