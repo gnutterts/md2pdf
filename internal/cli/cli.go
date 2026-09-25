@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/gnutterts/md2pdf/internal/pdfout"
 )
 
 // Mode determines how the supplied input is processed.
@@ -38,6 +41,9 @@ type Plan struct {
 	// Title and Author come from --title and --author; empty means unset.
 	Title  string
 	Author string
+	// Paper and Margin come from --paper and --margin; empty and zero mean the defaults.
+	Paper  string
+	Margin float64
 	// NoPageNumbers is set by --no-page-numbers; by default every page is numbered.
 	NoPageNumbers bool
 	// Creator names the program in the PDF; the entry point sets it.
@@ -83,7 +89,7 @@ var (
 )
 
 // Usage is the short usage text for the command.
-const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--no-page-numbers] <file-or-dir>"
+const Usage = "Usage: md2pdf [-o path] [--separate|-s] [--mermaid path] [--title text] [--author text] [--no-page-numbers] [--paper size] [--margin length] <file-or-dir>"
 
 // Parse turns arguments into a complete output plan.
 func Parse(args []string, fs FileSystem) (Plan, error) {
@@ -115,6 +121,9 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	}
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
+	if err := setLayout(&plan, f.paper, f.margin); err != nil {
+		return Plan{}, err
+	}
 	return plan, nil
 }
 
@@ -126,6 +135,8 @@ type flags struct {
 	title     string
 	author    string
 	noNumbers bool
+	paper     string
+	margin    string
 	positions []string
 }
 
@@ -164,6 +175,10 @@ func parseArgs(args []string) (flags, error) {
 			f.mermaid = args[i]
 		case "--no-page-numbers":
 			f.noNumbers = true
+		case "--paper":
+			f.paper, err = value(&i, "--paper")
+		case "--margin":
+			f.margin, err = value(&i, "--margin")
 		case "--title":
 			f.title, err = value(&i, "--title")
 		case "--author":
@@ -282,4 +297,50 @@ func pdfName(source string) string {
 		return strings.TrimSuffix(source, extension) + ".pdf"
 	}
 	return source + ".pdf"
+}
+
+// setLayout validates --paper and --margin and stores them in the plan.
+func setLayout(plan *Plan, paper, margin string) error {
+	width, height := 595.28, 841.89
+	if paper != "" {
+		w, h, ok := pdfout.PaperSize(paper)
+		if !ok {
+			return fmt.Errorf("unknown paper size %q (a4, a5, a3, letter, legal)", paper)
+		}
+		plan.Paper = strings.ToLower(paper)
+		width, height = w, h
+	}
+	if margin != "" {
+		points, err := ParseLength(margin)
+		if err != nil {
+			return fmt.Errorf("--margin: %w", err)
+		}
+		if limit := min(width, height) / 4; points > limit {
+			return fmt.Errorf("--margin %s is too large for this paper (at most %.0f points)", margin, limit)
+		}
+		plan.Margin = points
+	}
+	return nil
+}
+
+// ParseLength reads a length such as 20mm, 0.75in or 56pt into points; a bare
+// number is in points.
+func ParseLength(text string) (float64, error) {
+	text = strings.TrimSpace(strings.ToLower(text))
+	unit, factor := "pt", 1.0
+	switch {
+	case strings.HasSuffix(text, "mm"):
+		unit, factor = "mm", 72/25.4
+	case strings.HasSuffix(text, "in"):
+		unit, factor = "in", 72
+	case strings.HasSuffix(text, "pt"):
+	}
+	number, err := strconv.ParseFloat(strings.TrimSuffix(text, unit), 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a length such as 20mm, 0.75in or 56pt", text)
+	}
+	if number <= 0 {
+		return 0, fmt.Errorf("%q must be positive", text)
+	}
+	return number * factor, nil
 }

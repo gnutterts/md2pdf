@@ -867,6 +867,7 @@ func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 // outlineTitles decodes the UTF-16 titles of the outline entries in document order.
 func outlineTitles(content []byte) []string {
 	var titles []string
@@ -926,10 +927,21 @@ func TestBookmarkTitlesKeepTheirCharacters(t *testing.T) {
 	canvas.Style("Helvetica", true, false, 20)
 	canvas.Bookmark("Cost: \u20ac5 \u2014 \u201cquoted\u201d \u2122 caf\u00e9 \u0416", 1)
 	target := filepath.Join(t.TempDir(), "unicode.pdf")
+=======
+func TestLayoutSetsPaperAndMargin(t *testing.T) {
+	document := NewWithLayout(Layout{Paper: "Letter", Margin: 36})
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("left edge")
+	canvas.LineBreak(15)
+	canvas.Rule()
+	target := filepath.Join(t.TempDir(), "letter.pdf")
+>>>>>>> fbf1762 (Choose the paper size and the margin)
 	if err := document.Write(target); err != nil {
 		t.Fatal(err)
 	}
 	content, _ := os.ReadFile(target)
+<<<<<<< HEAD
 	want := "Cost: \u20ac5 \u2014 \u201cquoted\u201d \u2122 caf\u00e9 \u0416"
 	if got := outlineTitles(content); len(got) != 1 || got[0] != want {
 		t.Fatalf("outline titles = %q, want %q", got, want)
@@ -970,12 +982,42 @@ func TestBookmarkOnSecondPageTargetsThatPage(t *testing.T) {
 	canvas.NewPage()
 	canvas.Bookmark("Late", 1)
 	target := filepath.Join(t.TempDir(), "dest.pdf")
+=======
+	if !bytes.Contains(content, []byte("/MediaBox [0 0 612.00 792.00]")) {
+		t.Fatalf("page is not Letter: %s", regexp.MustCompile(`/MediaBox \[[^\]]*\]`).Find(content))
+	}
+	stream := contentStream(t, content)
+	columns := textColumns(t, stream)
+	if len(columns) == 0 || columns[0] < 38.7 || columns[0] > 39 {
+		t.Fatalf("text starts at x=%v, want the 36 point margin plus fpdf's 2.83 point cell margin", columns)
+	}
+	// The rule runs from the left margin to the right margin: 36 .. 612-36.
+	if !regexp.MustCompile(`36\.00 [\d.]+ m 576\.00 [\d.]+ l S`).Match(stream) {
+		t.Fatalf("rule does not run from 36 to 576:\n%s", stream)
+	}
+}
+
+func TestDefaultLayoutIsA4WithTheDefaultMargin(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("x")
+	target := filepath.Join(t.TempDir(), "a4.pdf")
+>>>>>>> fbf1762 (Choose the paper size and the margin)
 	if err := document.Write(target); err != nil {
 		t.Fatal(err)
 	}
 	content, _ := os.ReadFile(target)
+<<<<<<< HEAD
 	dests := regexp.MustCompile(`/Dest \[(\d+) 0 R /XYZ`).FindAllSubmatch(content, -1)
 	if len(dests) != 2 || string(dests[0][1]) == string(dests[1][1]) {
 		t.Fatalf("both bookmarks point at the same page: %q", dests)
+=======
+	if !bytes.Contains(content, []byte("/MediaBox [0 0 595.28 841.89]")) {
+		t.Fatal("default page is not A4")
+	}
+	if columns := textColumns(t, contentStream(t, content)); len(columns) == 0 || columns[0] < DefaultMargin+2.7 || columns[0] > DefaultMargin+3 {
+		t.Fatalf("text starts at %v, want %v plus fpdf's 2.83 point cell margin", columns, DefaultMargin)
+>>>>>>> fbf1762 (Choose the paper size and the margin)
 	}
 }

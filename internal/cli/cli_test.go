@@ -241,3 +241,51 @@ func TestParsePageNumbers(t *testing.T) {
 		t.Fatalf("--no-page-numbers: NoPageNumbers = %v, err = %v", plan.NoPageNumbers, err)
 	}
 }
+
+func TestParseLength(t *testing.T) {
+	for _, test := range []struct {
+		in   string
+		want float64
+		bad  bool
+	}{
+		{"20mm", 56.692913, false}, {"1in", 72, false}, {"40", 40, false}, {"56pt", 56, false},
+		{"0.75IN", 54, false}, {"abc", 0, true}, {"-5pt", 0, true}, {"0", 0, true}, {"mm", 0, true},
+	} {
+		got, err := ParseLength(test.in)
+		if test.bad {
+			if err == nil {
+				t.Errorf("ParseLength(%q) = %v, want an error", test.in, got)
+			}
+			continue
+		}
+		if err != nil || got < test.want-0.001 || got > test.want+0.001 {
+			t.Errorf("ParseLength(%q) = %v, %v, want %v", test.in, got, err, test.want)
+		}
+	}
+}
+
+func TestParsePaperAndMargin(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	plan, err := Parse([]string{"--paper", "LETTER", "--margin", "1in", "notes.md"}, fs)
+	if err != nil || plan.Paper != "letter" || plan.Margin != 72 {
+		t.Fatalf("Paper=%q Margin=%v err=%v", plan.Paper, plan.Margin, err)
+	}
+	plan, err = Parse([]string{"notes.md"}, fs)
+	if err != nil || plan.Paper != "" || plan.Margin != 0 {
+		t.Fatalf("defaults: Paper=%q Margin=%v err=%v", plan.Paper, plan.Margin, err)
+	}
+	for _, test := range []struct {
+		args    []string
+		message string
+	}{
+		{[]string{"--paper", "b5", "notes.md"}, `unknown paper size "b5"`},
+		{[]string{"--margin", "abc", "notes.md"}, "--margin"},
+		{[]string{"--margin", "200pt", "notes.md"}, "too large"},
+		{[]string{"--paper", "a5", "--margin", "110pt", "notes.md"}, "too large"},
+		{[]string{"notes.md", "--paper"}, "--paper expects a value"},
+	} {
+		if _, err := Parse(test.args, fs); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("Parse(%v) error = %v, want %q", test.args, err, test.message)
+		}
+	}
+}
