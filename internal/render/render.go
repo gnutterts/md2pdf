@@ -86,7 +86,9 @@ type Options struct {
 // drawState is what drawing remembers between blocks.
 type drawState struct {
 	first bool
-	err   error // the first warning when Options.Strict is set
+	// pageStarted is set when a new page was started for the heading that comes next.
+	pageStarted bool
+	err         error // the first warning when Options.Strict is set
 }
 
 // Draw draws blocks in their original order.
@@ -101,6 +103,11 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 				j++
 			}
 			run := blocks[i:j]
+			if run[0].Kind == markdown.Heading {
+				// Decide the page before the quote starts, so that no empty bar is
+				// drawn at the bottom of the page the heading leaves.
+				state.pageStarted = canvas.KeepWithNext(headingSpace(run[0], state.first))
+			}
 			canvas.Quote(level, func() {
 				for k, b := range run {
 					if state.err != nil {
@@ -125,29 +132,13 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 func drawBlock(canvas Canvas, block markdown.Block, options Options, state *drawState, spaceAfter bool) {
 	switch block.Kind {
 	case markdown.Heading:
-		base := baseStyle{family: "Helvetica", size: 11, bold: true}
-		switch block.Level {
-		case 5:
-			base.italic = true
-		case 6:
-			base.bold, base.italic = false, true
+		base := headingStyle(block.Level)
+		broke := state.pageStarted
+		state.pageStarted = false
+		if !broke {
+			broke = canvas.KeepWithNext(headingSpace(block, state.first))
 		}
-		if block.Level == 1 {
-			base.size = 20
-		}
-		if block.Level == 2 {
-			base.size = 16
-		}
-		if block.Level == 3 {
-			base.size = 13
-		}
-		// A heading needs room for itself and two lines of what follows;
-		// otherwise it starts on the next page instead of ending this one.
-		space := LineHeight(base.size) + 6 + 2*lineHeight
-		if !state.first {
-			space += 12
-		}
-		if !canvas.KeepWithNext(space) && !state.first {
+		if !broke && !state.first {
 			canvas.LineBreak(12)
 		}
 		indent := continuationIndent(block)
@@ -234,6 +225,35 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 		canvas.LineBreak(6)
 	}
 	state.first = false
+}
+
+// headingStyle is the style of a heading of the given level.
+func headingStyle(level int) baseStyle {
+	base := baseStyle{family: "Helvetica", size: 11, bold: true}
+	switch level {
+	case 1:
+		base.size = 20
+	case 2:
+		base.size = 16
+	case 3:
+		base.size = 13
+	case 5:
+		base.italic = true
+	case 6:
+		base.bold, base.italic = false, true
+	}
+	return base
+}
+
+// headingSpace is the room a heading needs: itself, the space below it and two
+// lines of what follows, plus the space above it unless it opens the document.
+// Without that room it starts the next page instead of ending this one.
+func headingSpace(block markdown.Block, first bool) float64 {
+	space := LineHeight(headingStyle(block.Level).size) + 6 + 2*lineHeight
+	if !first {
+		space += 12
+	}
+	return space
 }
 
 // listTextIndent is the distance from the left margin to the text of a list item.

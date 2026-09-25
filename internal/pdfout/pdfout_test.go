@@ -1366,3 +1366,36 @@ func TestAHeadingAtTheTopOfAPageAddsNoEmptyPage(t *testing.T) {
 		t.Fatalf("%d pages, want 1", document.pdf.PageCount())
 	}
 }
+
+func TestAQuoteOpeningWithAHeadingLeavesNoEmptyBar(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	for document.pdf.GetY()+15 < 841.89-DefaultMargin-40 {
+		canvas.Text("filler")
+		canvas.LineBreak(15)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.Heading, Level: 2, Quote: 1, Spans: []markdown.Span{{Text: "Quoted"}}},
+		{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "body"}}},
+	}
+	if err := render.Draw(blocks, canvas, render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "quote.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if len(streams) != 2 || !bytes.Contains(streams[1], []byte("(Quoted)")) {
+		t.Fatalf("%d pages; the heading must open page 2", len(streams))
+	}
+	bar := regexp.MustCompile(`[\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S`)
+	if bar.Match(streams[0]) {
+		t.Fatalf("page 1 has a quote bar although the quote starts on page 2: %s", bar.Find(streams[0]))
+	}
+	if !bar.Match(streams[1]) {
+		t.Fatal("page 2 has no quote bar")
+	}
+}
