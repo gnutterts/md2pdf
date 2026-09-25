@@ -397,7 +397,7 @@ func TestParseTOC(t *testing.T) {
 	if plan, err := Parse([]string{"--toc-depth", "2", "notes.md"}, fs); err != nil || !plan.TOC || plan.TOCDepth != 2 {
 		t.Fatalf("--toc-depth implies --toc: %+v, %v", plan, err)
 	}
-	for _, bad := range []string{"0", "7", "x"} {
+	for _, bad := range []string{"0", "7", "x", ""} {
 		if _, err := Parse([]string{"--toc-depth", bad, "notes.md"}, fs); err == nil || !strings.Contains(err.Error(), "1 to 6") {
 			t.Errorf("--toc-depth %s: err = %v", bad, err)
 		}

@@ -153,16 +153,9 @@ func buildWithTOC(plan cli.Plan, task cli.Task, options render.Options, read fun
 		}
 		return build(plan, task, options, read, nil, 0)
 	}
-	// The width of the page numbers can change how many pages the table
-	// needs, so settle its length first.
-	offset := pdfout.TOCPages(layout(plan), entries, 0)
-	for i := 0; i < 3; i++ {
-		next := pdfout.TOCPages(layout(plan), entries, offset)
-		if next == offset {
-			break
-		}
-		offset = next
-	}
+	// Every entry takes one line whatever its page number, so the length of the
+	// table is known before the page numbers are.
+	offset := pdfout.TOCPages(layout(plan), entries)
 	document, err := build(plan, task, options, read, entries, offset)
 	if err != nil {
 		return nil, err

@@ -958,9 +958,10 @@ func fitText(pdf *fpdf.Fpdf, s string, width float64) string {
 }
 
 // TOCPages is the number of pages a table of contents of entries takes with
-// this layout.
-func TOCPages(layout Layout, entries []Heading, offset int) int {
+// this layout. Every entry is one line, shortened when it is too long, so the
+// page numbers do not change it.
+func TOCPages(layout Layout, entries []Heading) int {
 	scratch := NewWithLayout(layout)
-	scratch.TOC(entries, offset)
+	scratch.TOC(entries, 0)
 	return scratch.pdf.PageNo() - 1
 }

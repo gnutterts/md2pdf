@@ -133,10 +133,10 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	plan.Title, plan.Author = f.title, f.author
 	plan.NoPageNumbers = f.noNumbers
 	plan.TOC = f.toc
-	if f.tocDepth != "" {
-		depth, err := strconv.Atoi(f.tocDepth)
+	if f.tocDepth != nil {
+		depth, err := strconv.Atoi(*f.tocDepth)
 		if err != nil || depth < 1 || depth > 6 {
-			return Plan{}, fmt.Errorf("--toc-depth %q must be a heading level from 1 to 6", f.tocDepth)
+			return Plan{}, fmt.Errorf("--toc-depth %q must be a heading level from 1 to 6", *f.tocDepth)
 		}
 		plan.TOC, plan.TOCDepth = true, depth
 	}
@@ -161,7 +161,7 @@ type flags struct {
 	author    string
 	noNumbers bool
 	toc       bool
-	tocDepth  string
+	tocDepth  *string
 	scale     string
 	timeout   string
 	strict    bool
@@ -207,7 +207,9 @@ func parseArgs(args []string) (flags, error) {
 		case "--toc":
 			f.toc = true
 		case "--toc-depth":
-			f.tocDepth, err = value(&i, "--toc-depth")
+			var depth string
+			depth, err = value(&i, "--toc-depth")
+			f.tocDepth = &depth
 		case "--strict":
 			f.strict = true
 		case "--force":
