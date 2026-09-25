@@ -7,11 +7,11 @@ This release makes the output a proper document, and makes runs safer.
 ### Added
 
 - The PDF records a title, an author and the creator. The title comes from `--title`, the front matter,
-  the first level 1 heading, or the file name; the author from `--author` or the front matter.
+  the first level 1 heading, or the file name (the directory name when a directory is merged); the author from `--author` or the front matter.
 - Every page is numbered (`n / N`, centred in grey); `--no-page-numbers` turns it off.
 - `--paper` (`a4`, `a5`, `a3`, `letter`, `legal`) and `--margin` (`20mm`, `0.75in`, `56pt`).
 - Every heading becomes a bookmark in the outline of the PDF viewer.
-- `--strict` treats a warning, such as a failed Mermaid diagram, as an error: no PDF is written and the
+- `--strict` treats a warning, such as a failed Mermaid diagram, as an error: the run stops, the failing file gets no PDF and the
   exit code is 1.
 - `--force` allows `-o` to overwrite an existing file that is not a PDF.
 
