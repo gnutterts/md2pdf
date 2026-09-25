@@ -718,3 +718,43 @@ func TestCheckboxSitsOnItsTextLine(t *testing.T) {
 		t.Fatalf("checkbox spans %.2f to %.2f, want inside the line %.2f to %.2f", boxTop, boxTop+8, lineTop, lineTop+15)
 	}
 }
+
+// infoString reads a string from the PDF information dictionary; fpdf writes
+// UTF-8 strings as UTF-16BE with a byte order mark.
+func infoString(t *testing.T, pdf []byte, key string) (string, bool) {
+	t.Helper()
+	marker := []byte("/" + key + " (\xfe\xff")
+	at := bytes.Index(pdf, marker)
+	if at < 0 {
+		return "", false
+	}
+	raw := pdf[at+len(marker):]
+	raw = raw[:bytes.IndexByte(raw, ')')]
+	var out []rune
+	for i := 0; i+1 < len(raw); i += 2 {
+		out = append(out, rune(raw[i])<<8|rune(raw[i+1]))
+	}
+	return string(out), true
+}
+
+func TestSetInfoWritesTitleAuthorAndCreator(t *testing.T) {
+	document := New()
+	document.SetInfo("Café notes", "", "md2pdf test")
+	target := filepath.Join(t.TempDir(), "info.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := infoString(t, content, "Title"); !ok || got != "Café notes" {
+		t.Fatalf("Title = %q, %v", got, ok)
+	}
+	if got, ok := infoString(t, content, "Creator"); !ok || got != "md2pdf test" {
+		t.Fatalf("Creator = %q, %v", got, ok)
+	}
+	if _, ok := infoString(t, content, "Author"); ok {
+		t.Fatal("an empty author must not be written")
+	}
+}

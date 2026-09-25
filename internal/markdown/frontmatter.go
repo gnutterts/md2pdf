@@ -4,10 +4,21 @@ package markdown
 
 import (
 	"bytes"
+	"strings"
 )
 
 // Metadata holds the simple top-level fields of a front matter block.
 type Metadata map[string]string
+
+// Get returns the value of key, ignoring case; it is empty when the key is absent.
+func (m Metadata) Get(key string) string {
+	for k, v := range m {
+		if strings.EqualFold(k, key) {
+			return v
+		}
+	}
+	return ""
+}
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 

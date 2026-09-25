@@ -175,3 +175,82 @@ func pageSources() []string {
 	}
 	return sources
 }
+
+func pdfInfo(t *testing.T, path, key string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := []byte("/" + key + " (\xfe\xff")
+	at := bytes.Index(content, marker)
+	if at < 0 {
+		return ""
+	}
+	raw := content[at+len(marker):]
+	raw = raw[:bytes.IndexByte(raw, ')')]
+	var out []rune
+	for i := 0; i+1 < len(raw); i += 2 {
+		out = append(out, rune(raw[i])<<8|rune(raw[i+1]))
+	}
+	return string(out)
+}
+
+func TestRunDocumentTitleAndAuthorPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	cases := []struct {
+		name, content, flagTitle, flagAuthor string
+		wantTitle, wantAuthor                string
+	}{
+		{"flag.md", "---\ntitle: Front\nauthor: Ann\n---\n# Head\n", "Flag", "Bob", "Flag", "Bob"},
+		{"front.md", "---\ntitle: Front\nauthor: Ann\n---\n# Head\n", "", "", "Front", "Ann"},
+		{"head.md", "# Head *one*\n\ntext\n", "", "", "Head one", ""},
+		{"plain.md", "just text\n", "", "", "plain", ""},
+	}
+	for _, c := range cases {
+		source := write(c.name, c.content)
+		target := filepath.Join(dir, c.name+".pdf")
+		plan := cli.Plan{
+			Mode: cli.ModeSingle, Tasks: []cli.Task{{Sources: []string{source}, Target: target}},
+			Title: c.flagTitle, Author: c.flagAuthor, Creator: "md2pdf test",
+		}
+		if err := Run(plan, render.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		if got := pdfInfo(t, target, "Title"); got != c.wantTitle {
+			t.Errorf("%s: Title = %q, want %q", c.name, got, c.wantTitle)
+		}
+		if got := pdfInfo(t, target, "Author"); got != c.wantAuthor {
+			t.Errorf("%s: Author = %q, want %q", c.name, got, c.wantAuthor)
+		}
+		if got := pdfInfo(t, target, "Creator"); got != "md2pdf test" {
+			t.Errorf("%s: Creator = %q", c.name, got)
+		}
+	}
+}
+
+func TestRunMergedTitleFallsBackToDirectoryName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "handbook")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(dir, "a.md")
+	if err := os.WriteFile(source, []byte("just text\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "out.pdf")
+	plan := cli.Plan{Mode: cli.ModeMerged, Tasks: []cli.Task{{Sources: []string{source}, Target: target}}}
+	if err := Run(plan, render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pdfInfo(t, target, "Title"); got != "handbook" {
+		t.Fatalf("Title = %q", got)
+	}
+}

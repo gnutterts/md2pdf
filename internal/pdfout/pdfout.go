@@ -50,6 +50,19 @@ func New() *Document {
 	return &Document{pdf: pdf}
 }
 
+// SetInfo sets the document information; empty values are left unset.
+func (d *Document) SetInfo(title, author, creator string) {
+	if title != "" {
+		d.pdf.SetTitle(title, true)
+	}
+	if author != "" {
+		d.pdf.SetAuthor(author, true)
+	}
+	if creator != "" {
+		d.pdf.SetCreator(creator, true)
+	}
+}
+
 // Canvas returns the drawing surface of the document.
 func (d *Document) Canvas() render.Canvas { return documentCanvas{d: d} }
 

@@ -9,10 +9,15 @@ md2pdf [flags] <file.md | directory>
 | `-o <path>` | Output file, or the output directory with `--separate` |
 | `--separate`, `-s` | Create one PDF for every Markdown file in a directory |
 | `--mermaid <path>` | Path to the Mermaid renderer; `MD2PDF_MERMAID` can also set it, and `off` disables rendering |
+| `--title <text>` | Document title; by default the `title` in the front matter, else the first level 1 heading, else the file name (the directory name when a directory is merged) |
+| `--author <text>` | Document author; by default the `author` in the front matter |
 | `--version` | Print the version |
 | `-h`, `--help` | Print usage |
 
 Errors are written to stderr as `error: <reason>` and the exit code is 1.
+
+The PDF also records `md2pdf <version>` as its creator. With `--separate`, `--title` and `--author` apply to
+every file; without them each file gets its own title and author.
 
 ## Where the PDF goes
 
