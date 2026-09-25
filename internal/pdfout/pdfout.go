@@ -47,8 +47,11 @@ type Document struct {
 	pdf    *fpdf.Fpdf
 	margin float64
 	width  float64 // page width in points
-	indent float64
-	images int
+	indent float64 // the indentation in use: requested, but never wider than maxIndent
+	// requested is the sum of all Indent calls, so that indenting back is exact even
+	// when the indentation in use was capped.
+	requested float64
+	images    int
 
 	// outline holds the heading levels of the bookmarks that are still open; its
 	// length is the outline depth of the next bookmark.
@@ -252,8 +255,18 @@ func (v documentCanvas) LineBreak(h float64) {
 	v.d.lineSize, v.d.fresh = v.d.font.size, true
 	v.resetX()
 }
+
+// minTextWidth is the text width that deep nesting never takes away.
+const minTextWidth = 120.0
+
+// maxIndent is the widest indentation that still leaves minTextWidth of text.
+func (d *Document) maxIndent() float64 {
+	return max(d.width-2*d.margin-minTextWidth, 0)
+}
+
 func (v documentCanvas) Indent(p float64) {
-	v.d.indent += p
+	v.d.requested = max(v.d.requested+p, 0)
+	v.d.indent = min(v.d.requested, v.d.maxIndent())
 	v.d.pdf.SetLeftMargin(v.d.margin + v.d.indent)
 	v.resetX()
 }
@@ -318,7 +331,7 @@ func (v documentCanvas) Quote(levels int, draw func()) {
 	_, top, _, bottom := pdf.GetMargins()
 
 	for level := 1; level <= levels; level++ {
-		x := v.d.margin + 14*float64(level-1) + 4
+		x := v.d.margin + min(14*float64(level-1), v.d.maxIndent()) + 4
 		for page := startPage; page <= endPage; page++ {
 			pdf.SetPage(page)
 			pdf.SetDrawColor(180, 180, 180)

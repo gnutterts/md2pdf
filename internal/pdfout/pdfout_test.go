@@ -1191,3 +1191,59 @@ func TestHeadingPushedToANewPageKeepsItsLineHeight(t *testing.T) {
 		t.Errorf("heading lines are %.2f apart, want 27", gap)
 	}
 }
+
+func TestDeepNestingKeepsAReadableTextWidth(t *testing.T) {
+	const levels = 40
+	var list, quote []markdown.Block
+	for depth := 0; depth < levels; depth++ {
+		list = append(list, markdown.Block{Kind: markdown.ListItem, Depth: depth, Spans: []markdown.Span{{Text: "item " + strings.Repeat("word ", 12)}}})
+	}
+	for level := 1; level <= levels; level++ {
+		quote = append(quote, markdown.Block{Kind: markdown.Paragraph, Quote: level, Spans: []markdown.Span{{Text: "quote " + strings.Repeat("word ", 12)}}})
+	}
+	code := markdown.Block{Kind: markdown.CodeBlock, Depth: levels, InItem: true, Lines: []string{strings.Repeat("x", 300)}}
+	table := markdown.Block{Kind: markdown.Table, Depth: levels, InItem: true, Rows: []markdown.Row{{Header: true, Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: "head"}}}}}, {Cells: []markdown.Cell{{Spans: []markdown.Span{{Text: strings.Repeat("cell ", 10)}}}}}}}
+	limit := 595.28 - DefaultMargin - minTextWidth + 4.5 // the widest left edge of text plus the table cell padding
+	for name, blocks := range map[string][]markdown.Block{"list": list, "quote": quote, "code in a list": {code}, "table in a list": {table}} {
+		document := New()
+		if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		target := filepath.Join(t.TempDir(), "deep.pdf")
+		if err := document.Write(target); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		content, _ := os.ReadFile(target)
+		columns := textColumns(t, contentStream(t, content))
+		if len(columns) == 0 {
+			t.Fatalf("%s: no text", name)
+		}
+		for _, x := range columns {
+			if x > limit {
+				t.Errorf("%s: text starts at x=%.1f, beyond %.1f", name, x, limit)
+				break
+			}
+		}
+	}
+}
+
+func TestIndentingBackIsExactAfterCapping(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	for i := 0; i < 50; i++ {
+		canvas.Indent(14)
+	}
+	for i := 0; i < 50; i++ {
+		canvas.Indent(-14)
+	}
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Text("back at the margin")
+	target := filepath.Join(t.TempDir(), "back.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	if columns := textColumns(t, contentStream(t, content)); len(columns) == 0 || columns[0] > DefaultMargin+3 {
+		t.Fatalf("text starts at %v, want the margin %v", columns, DefaultMargin)
+	}
+}
