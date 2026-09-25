@@ -30,6 +30,8 @@ type fakeCanvas struct {
 	tables   [][]markdown.Row
 	scales   []float64 // the scale of every diagram
 	imageErr error     // what Image returns
+	// keepBreaks is what KeepWithNext reports.
+	keepBreaks bool
 }
 
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
@@ -68,13 +70,6 @@ func (n *fakeCanvas) CodeBlock(r []string) {
 func (n *fakeCanvas) Diagram(_ []byte, scale float64) error {
 	n.calls = append(n.calls, "diagram")
 	n.scales = append(n.scales, scale)
-	return nil
-}
-func (n *fakeCanvas) Image(path string) error {
-	if n.imageErr != nil {
-		return n.imageErr
-	}
-	n.calls = append(n.calls, "image:"+path)
 	return nil
 }
 func (n *fakeCanvas) Rule() { n.calls = append(n.calls, "rule") }
@@ -594,6 +589,107 @@ func TestAnImageBlockDrawsNoAltTextYet(t *testing.T) {
 			t.Fatalf("alt text leaked: %v", canvas.calls)
 		}
 	}
+}
+
+func (n *fakeCanvas) KeepWithNext(h float64) bool {
+	n.calls = append(n.calls, fmt.Sprintf("keep:%g", h))
+	return n.keepBreaks
+}
+
+func TestAHeadingAsksToKeepWithTheNextBlock(t *testing.T) {
+	blocks := []markdown.Block{
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "before"}}},
+		{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Two"}}},
+	}
+	for _, breaks := range []bool{false, true} {
+		canvas := &fakeCanvas{keepBreaks: breaks}
+		if err := Draw(blocks, canvas, Options{}); err != nil {
+			t.Fatal(err)
+		}
+		keep, spaceAbove, bookmark := -1, -1, -1
+		for i, call := range canvas.calls {
+			switch {
+			case strings.HasPrefix(call, "keep:"):
+				keep = i
+				if call != "keep:69.5" { // 12 above + 21.5 line + 6 below + 2 x 15 following
+					t.Errorf("keep call %q, want keep:69.5", call)
+				}
+			case call == "end:12" && keep >= 0 && spaceAbove < 0:
+				spaceAbove = i
+			case strings.HasPrefix(call, "bookmark:"):
+				bookmark = i
+			}
+		}
+		if keep < 0 || bookmark < keep {
+			t.Fatalf("keep must come before the bookmark: %v", canvas.calls)
+		}
+		if breaks == (spaceAbove >= 0) {
+			t.Errorf("new page = %v, but space above the heading drawn = %v", breaks, spaceAbove >= 0)
+		}
+	}
+}
+
+func TestPrerenderRunsDiagramsAtTheSameTimeWithinTheLimit(t *testing.T) {
+	var calls, running, peak atomic.Int32
+	cache := NewDiagramCache(func(text string) ([]byte, error) {
+		calls.Add(1)
+		now := running.Add(1)
+		for {
+			old := peak.Load()
+			if now <= old || peak.CompareAndSwap(old, now) {
+				break
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+		running.Add(-1)
+		return []byte(text), nil
+	})
+	var texts []string
+	for i := 0; i < 8; i++ {
+		texts = append(texts, fmt.Sprintf("graph %d", i))
+	}
+	start := time.Now()
+	Prerender(cache, append(texts, texts[0], texts[1]), 4)
+	elapsed := time.Since(start)
+	if calls.Load() != 8 {
+		t.Fatalf("%d renders, want 8", calls.Load())
+	}
+	if peak.Load() > 4 || peak.Load() < 2 {
+		t.Fatalf("at most %d at the same time, want 2 to 4", peak.Load())
+	}
+	if elapsed > 1200*time.Millisecond {
+		t.Fatalf("took %v; eight renders of 200 ms in series take 1.6 s", elapsed)
+	}
+	// Drawing afterwards only reads the cache.
+	if _, err := cache("graph 3"); err != nil || calls.Load() != 8 {
+		t.Fatalf("a cached diagram was rendered again: calls = %d, err = %v", calls.Load(), err)
+	}
+}
+
+func TestAPanickingRendererBecomesAnError(t *testing.T) {
+	cache := NewDiagramCache(func(string) ([]byte, error) { panic("renderer exploded") })
+	Prerender(cache, []string{"graph TD"}, 2)
+	if _, err := cache("graph TD"); err == nil || !strings.Contains(err.Error(), "renderer exploded") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDiagramTextsAreDistinctAndInOrder(t *testing.T) {
+	mermaidBlock := func(lines ...string) markdown.Block {
+		return markdown.Block{Kind: markdown.CodeBlock, Language: "mermaid", Lines: lines}
+	}
+	blocks := []markdown.Block{mermaidBlock("b"), {Kind: markdown.CodeBlock, Language: "go", Lines: []string{"x"}}, mermaidBlock("a"), mermaidBlock("b")}
+	if got := DiagramTexts(blocks); fmt.Sprint(got) != "[b a]" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func (n *fakeCanvas) Image(path string) error {
+	if n.imageErr != nil {
+		return n.imageErr
+	}
+	n.calls = append(n.calls, "image:"+path)
+	return nil
 }
 
 func TestAnImageIsDrawnOrFallsBackToItalicAltText(t *testing.T) {

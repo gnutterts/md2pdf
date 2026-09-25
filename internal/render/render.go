@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +44,9 @@ type Canvas interface {
 	HangingIndent()
 	CodeBlock(lines []string)
 	Rule()
+	// KeepWithNext starts a new page when height no longer fits on the current
+	// one, unless the page is still empty. It reports whether it did.
+	KeepWithNext(height float64) bool
 	// Bookmark adds an entry to the outline of the PDF at the current position.
 	Bookmark(text string, level int)
 	// Table draws a complete table: the canvas determines column widths and
@@ -87,7 +91,9 @@ type Options struct {
 // drawState is what drawing remembers between blocks.
 type drawState struct {
 	first bool
-	err   error // the first warning when Options.Strict is set
+	// pageStarted is set when a new page was started for the heading that comes next.
+	pageStarted bool
+	err         error // the first warning when Options.Strict is set
 }
 
 // Draw draws blocks in their original order.
@@ -102,6 +108,11 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 				j++
 			}
 			run := blocks[i:j]
+			if run[0].Kind == markdown.Heading {
+				// Decide the page before the quote starts, so that no empty bar is
+				// drawn at the bottom of the page the heading leaves.
+				state.pageStarted = canvas.KeepWithNext(headingSpace(run[0], state.first))
+			}
 			canvas.Quote(level, func() {
 				for k, b := range run {
 					if state.err != nil {
@@ -126,24 +137,14 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 func drawBlock(canvas Canvas, block markdown.Block, options Options, state *drawState, spaceAfter bool) {
 	switch block.Kind {
 	case markdown.Heading:
-		if !state.first {
+		base := headingStyle(block.Level)
+		broke := state.pageStarted
+		state.pageStarted = false
+		if !broke {
+			broke = canvas.KeepWithNext(headingSpace(block, state.first))
+		}
+		if !broke && !state.first {
 			canvas.LineBreak(12)
-		}
-		base := baseStyle{family: "Helvetica", size: 11, bold: true}
-		switch block.Level {
-		case 5:
-			base.italic = true
-		case 6:
-			base.bold, base.italic = false, true
-		}
-		if block.Level == 1 {
-			base.size = 20
-		}
-		if block.Level == 2 {
-			base.size = 16
-		}
-		if block.Level == 3 {
-			base.size = 13
 		}
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
@@ -256,6 +257,35 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 	state.first = false
 }
 
+// headingStyle is the style of a heading of the given level.
+func headingStyle(level int) baseStyle {
+	base := baseStyle{family: "Helvetica", size: 11, bold: true}
+	switch level {
+	case 1:
+		base.size = 20
+	case 2:
+		base.size = 16
+	case 3:
+		base.size = 13
+	case 5:
+		base.italic = true
+	case 6:
+		base.bold, base.italic = false, true
+	}
+	return base
+}
+
+// headingSpace is the room a heading needs: itself, the space below it and two
+// lines of what follows, plus the space above it unless it opens the document.
+// Without that room it starts the next page instead of ending this one.
+func headingSpace(block markdown.Block, first bool) float64 {
+	space := LineHeight(headingStyle(block.Level).size) + 6 + 2*lineHeight
+	if !first {
+		space += 12
+	}
+	return space
+}
+
 // listTextIndent is the distance from the left margin to the text of a list item.
 func listTextIndent(block markdown.Block) float64 {
 	return float64(block.Depth+1)*14 + float64(block.Quote)*14
@@ -358,7 +388,61 @@ func NewDiagramCache(produce func(text string) ([]byte, error)) func(text string
 			entries[text] = entry
 		}
 		mutex.Unlock()
-		entry.once.Do(func() { entry.png, entry.err = produce(text) })
+		entry.once.Do(func() { entry.png, entry.err = safely(produce, text) })
 		return entry.png, entry.err
 	}
+}
+
+// safely calls produce and turns a panic into an error, so that a failing
+// renderer in a background goroutine cannot bring the program down.
+func safely(produce func(string) ([]byte, error), text string) (png []byte, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			png, err = nil, fmt.Errorf("diagram renderer failed: %v", recovered)
+		}
+	}()
+	return produce(text)
+}
+
+// DiagramTexts returns the distinct Mermaid diagram texts of blocks in
+// document order.
+func DiagramTexts(blocks []markdown.Block) []string {
+	seen := map[string]bool{}
+	var texts []string
+	for _, block := range blocks {
+		if block.Kind != markdown.CodeBlock || block.Language != "mermaid" {
+			continue
+		}
+		text := strings.Join(block.Lines, "\n")
+		if !seen[text] {
+			seen[text] = true
+			texts = append(texts, text)
+		}
+	}
+	return texts
+}
+
+// Workers is the number of diagrams rendered at the same time: at most four,
+// and no more than the processors this program may use.
+func Workers() int { return max(1, min(runtime.NumCPU(), runtime.GOMAXPROCS(0), 4)) }
+
+// Prerender renders texts through get with at most workers at a time. get is
+// meant to be a NewDiagramCache function: the results are kept there, and
+// drawing later only reads them. Errors are not returned here; drawing reports
+// them where each diagram appears.
+func Prerender(get func(string) ([]byte, error), texts []string, workers int) {
+	if workers < 1 {
+		workers = 1
+	}
+	slots := make(chan struct{}, workers)
+	var wait sync.WaitGroup
+	for _, text := range texts {
+		wait.Add(1)
+		slots <- struct{}{}
+		go func(text string) {
+			defer func() { <-slots; wait.Done() }()
+			_, _ = safely(get, text)
+		}(text)
+	}
+	wait.Wait()
 }

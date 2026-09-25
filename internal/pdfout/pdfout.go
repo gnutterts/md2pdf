@@ -794,6 +794,17 @@ func (v documentCanvas) pageContentHeight() float64 {
 	return pageHeight - top - bottom
 }
 
+// KeepWithNext starts a new page when height no longer fits, unless nothing has
+// been drawn on the page yet.
+func (v documentCanvas) KeepWithNext(height float64) bool {
+	_, top, _, _ := v.d.pdf.GetMargins()
+	if v.rowFits(height) || v.d.pdf.GetY() <= top+0.01 {
+		return false
+	}
+	v.NewPage()
+	return true
+}
+
 // rowFits reports whether a row still fits on the current page.
 func (v documentCanvas) rowFits(height float64) bool {
 	_, pageHeight := v.d.pdf.GetPageSize()

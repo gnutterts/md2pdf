@@ -1313,3 +1313,91 @@ func TestDiagramScaleKeepsThePrintedSize(t *testing.T) {
 		t.Fatalf("scale 0 draws %v wide, want 200 (treated as 1)", w)
 	}
 }
+
+// headingPage fills the first page until spare points remain above the bottom
+// margin, draws a level 2 heading and a paragraph, and returns the page number
+// of the heading and the number of pages.
+func headingPage(t *testing.T, spare float64) (int, int) {
+	t.Helper()
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	bottom := 841.89 - DefaultMargin
+	for document.pdf.GetY()+15 < bottom-spare {
+		canvas.Text("filler")
+		canvas.LineBreak(15)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Kept"}}},
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "body"}}},
+	}
+	if err := render.Draw(blocks, canvas, render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "keep.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	for i, stream := range streams {
+		if bytes.Contains(stream, []byte("(Kept)")) {
+			return i + 1, len(streams)
+		}
+	}
+	t.Fatal("heading not found")
+	return 0, 0
+}
+
+func TestAHeadingWithoutRoomBelowStartsTheNextPage(t *testing.T) {
+	if page, _ := headingPage(t, 40); page != 2 {
+		t.Fatalf("heading on page %d with 40 points left, want page 2", page)
+	}
+	if page, pages := headingPage(t, 120); page != 1 || pages != 1 {
+		t.Fatalf("heading on page %d of %d with 120 points left, want page 1 of 1", page, pages)
+	}
+}
+
+func TestAHeadingAtTheTopOfAPageAddsNoEmptyPage(t *testing.T) {
+	document := New()
+	blocks := []markdown.Block{{Kind: markdown.Heading, Level: 1, Spans: []markdown.Span{{Text: "Top"}}}}
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if document.pdf.PageCount() != 1 {
+		t.Fatalf("%d pages, want 1", document.pdf.PageCount())
+	}
+}
+
+func TestAQuoteOpeningWithAHeadingLeavesNoEmptyBar(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	for document.pdf.GetY()+15 < 841.89-DefaultMargin-40 {
+		canvas.Text("filler")
+		canvas.LineBreak(15)
+	}
+	blocks := []markdown.Block{
+		{Kind: markdown.Heading, Level: 2, Quote: 1, Spans: []markdown.Span{{Text: "Quoted"}}},
+		{Kind: markdown.Paragraph, Quote: 1, Spans: []markdown.Span{{Text: "body"}}},
+	}
+	if err := render.Draw(blocks, canvas, render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "quote.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	streams := contentStreams(t, content)
+	if len(streams) != 2 || !bytes.Contains(streams[1], []byte("(Quoted)")) {
+		t.Fatalf("%d pages; the heading must open page 2", len(streams))
+	}
+	bar := regexp.MustCompile(`[\d.]+ [\d.]+ m [\d.]+ [\d.]+ l S`)
+	if bar.Match(streams[0]) {
+		t.Fatalf("page 1 has a quote bar although the quote starts on page 2: %s", bar.Find(streams[0]))
+	}
+	if !bar.Match(streams[1]) {
+		t.Fatal("page 2 has no quote bar")
+	}
+}

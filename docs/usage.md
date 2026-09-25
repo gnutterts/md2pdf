@@ -59,6 +59,8 @@ the batch stops at the first failure.
 ## Mermaid
 
 A diagram that appears more than once, in one file or across the files of a directory, is rendered once.
+Up to four diagrams are rendered at the same time (fewer on a machine with fewer processors), before the PDF
+is drawn.
 
 Mermaid blocks are rendered with `mmdc` by default. Select another renderer with `--mermaid <path>` or
 `MD2PDF_MERMAID`; `off` disables rendering. A diagram whose image is larger than 64 MiB is refused like a failed one. If the renderer is missing or fails, a warning is written to

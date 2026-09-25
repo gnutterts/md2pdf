@@ -22,17 +22,21 @@ func Run(plan cli.Plan, options render.Options) error {
 		// One cache for the whole run: a diagram that appears in several files is rendered once.
 		options.Diagram = render.NewDiagramCache(options.Mermaid.ToPNG)
 	}
+	read := newSourceCache()
+	if options.Diagram != nil && options.Mermaid.Available() {
+		prerender(plan, options, read)
+	}
 	switch plan.Mode {
 	case cli.ModeSingle:
 		if len(plan.Tasks) != 1 || len(plan.Tasks[0].Sources) != 1 {
 			return errors.New("invalid output plan for a single file")
 		}
-		return renderTask(plan, plan.Tasks[0], options)
+		return renderTask(plan, plan.Tasks[0], options, read)
 	case cli.ModeMerged:
 		if len(plan.Tasks) != 1 || len(plan.Tasks[0].Sources) == 0 {
 			return errors.New("invalid output plan for merged files")
 		}
-		return renderMerged(plan, plan.Tasks[0], options)
+		return renderMerged(plan, plan.Tasks[0], options, read)
 	case cli.ModeSeparate:
 		failed := 0
 		for _, task := range plan.Tasks {
@@ -43,7 +47,7 @@ func Run(plan cli.Plan, options render.Options) error {
 			if err != nil {
 				err = fmt.Errorf("cannot write %q: %w", task.Target, err)
 			} else {
-				err = renderTask(plan, task, options)
+				err = renderTask(plan, task, options, read)
 			}
 			if err == nil {
 				continue
@@ -69,8 +73,8 @@ func Run(plan cli.Plan, options render.Options) error {
 	}
 }
 
-func renderTask(plan cli.Plan, task cli.Task, options render.Options) error {
-	source, err := readSource(task.Sources[0])
+func renderTask(plan cli.Plan, task cli.Task, options render.Options, read func(string) (source, error)) error {
+	source, err := read(task.Sources[0])
 	if err != nil {
 		return err
 	}
@@ -86,11 +90,11 @@ func renderTask(plan cli.Plan, task cli.Task, options render.Options) error {
 	return nil
 }
 
-func renderMerged(plan cli.Plan, task cli.Task, options render.Options) error {
+func renderMerged(plan cli.Plan, task cli.Task, options render.Options, read func(string) (source, error)) error {
 	document := pdfout.NewWithLayout(pdfout.Layout{Paper: plan.Paper, Margin: plan.Margin})
 	canvas := document.Canvas()
 	for i, path := range task.Sources {
-		source, err := readSource(path)
+		source, err := read(path)
 		if err != nil {
 			return err
 		}
@@ -116,6 +120,24 @@ type source struct {
 	path   string
 	meta   markdown.Metadata
 	blocks []markdown.Block
+}
+
+// newSourceCache returns readSource with memory: every file of a run is read
+// and parsed once, although diagrams are collected before drawing starts.
+func newSourceCache() func(string) (source, error) {
+	type result struct {
+		source source
+		err    error
+	}
+	results := map[string]result{}
+	return func(path string) (source, error) {
+		if r, ok := results[path]; ok {
+			return r.source, r.err
+		}
+		s, err := readSource(path)
+		results[path] = result{s, err}
+		return s, err
+	}
 }
 
 func readSource(path string) (source, error) {
@@ -159,4 +181,27 @@ func documentAuthor(plan cli.Plan, first source) string {
 		return plan.Author
 	}
 	return first.meta.Get("author")
+}
+
+// prerender renders the distinct diagrams of all sources of the run at the same
+// time, before anything is drawn. A source that cannot be read is skipped here;
+// drawing reports it in the usual way.
+func prerender(plan cli.Plan, options render.Options, read func(string) (source, error)) {
+	seen := map[string]bool{}
+	var texts []string
+	for _, task := range plan.Tasks {
+		for _, path := range task.Sources {
+			source, err := read(path)
+			if err != nil {
+				continue
+			}
+			for _, text := range render.DiagramTexts(source.blocks) {
+				if !seen[text] {
+					seen[text] = true
+					texts = append(texts, text)
+				}
+			}
+		}
+	}
+	render.Prerender(options.Diagram, texts, render.Workers())
 }
