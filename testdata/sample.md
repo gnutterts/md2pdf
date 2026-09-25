@@ -13,8 +13,8 @@ checked against something real rather than something invented.
 Paragraphs may contain **bold**, *italic*, ***both at once***, `inline code`, and a
 [link to the specification](https://spec.commonmark.org/). Struck text is shown as ~~removed~~.
 
-Accented characters matter for the cp1252 layer: café, déjà vu, coördinatie, Ångström, ©, ×, —, ….
-Arrows are transliterated because the base-14 fonts cannot draw them: → ← ↑ ↓.
+Accented and other characters are drawn with the embedded font: café, déjà vu, coördinatie, Ångström,
+©, ×, —, …, arrows → ← ↑ ↓, Greek Γειά, and Cyrillic Привет.
 
 ## Lists
 

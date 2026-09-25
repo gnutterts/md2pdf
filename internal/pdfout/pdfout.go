@@ -16,11 +16,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"unicode/utf16"
 
+	"github.com/gnutterts/md2pdf/internal/font"
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
-	"github.com/gnutterts/md2pdf/internal/text"
 	"github.com/go-pdf/fpdf"
 )
 
@@ -62,6 +61,8 @@ type Document struct {
 	// outline holds the heading levels of the bookmarks that are still open; its
 	// length is the outline depth of the next bookmark.
 	outline []int
+	// fonts are the family and style keys registered with fpdf so far.
+	fonts map[string]bool
 	// headings are all headings drawn so far, for a table of contents.
 	headings []Heading
 
@@ -103,7 +104,10 @@ func NewWithLayout(layout Layout) *Document {
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
 	width, _ := pdf.GetPageSize()
-	return &Document{pdf: pdf, margin: margin, width: width}
+	d := &Document{pdf: pdf, margin: margin, width: width, fonts: map[string]bool{}}
+	// Start with a UTF-8 font, so that fpdf treats every string as UTF-8.
+	d.setFont("Helvetica", "", 11)
+	return d
 }
 
 // SetInfo sets the document information; empty values are left unset.
@@ -131,10 +135,39 @@ func (d *Document) SetPageNumbers(on bool) {
 	d.pdf.SetFooterFunc(func() {
 		pdf := d.pdf
 		pdf.SetXY(d.margin, -d.margin/2-4)
-		pdf.SetFont("Helvetica", "", 9)
+		d.setFont("Helvetica", "", 9)
 		pdf.SetTextColor(128, 128, 128)
 		pdf.CellFormat(d.width-2*d.margin, 10, fmt.Sprintf("%d / {nb}", pdf.PageNo()), "", 0, "C", false, 0, "")
 	})
+}
+
+// setFont selects a font. The names of the PDF core fonts that the renderer
+// uses map to the embedded families: Helvetica to DejaVu Sans, Courier to
+// DejaVu Sans Mono. A family and style are registered with fpdf on first use,
+// so a document only parses the fonts it draws with. U and S in style are
+// underline and strike-through, which fpdf draws itself.
+func (d *Document) setFont(family, style string, size float64) {
+	name := font.Sans
+	if strings.EqualFold(family, "Courier") || family == font.Mono {
+		name = font.Mono
+	}
+	face := ""
+	if strings.Contains(style, "B") {
+		face += "B"
+	}
+	if strings.Contains(style, "I") {
+		face += "I"
+	}
+	if key := name + face; !d.fonts[key] {
+		d.fonts[key] = true
+		data, err := font.Bytes(name, face)
+		if err != nil {
+			d.pdf.SetError(err)
+			return
+		}
+		d.pdf.AddUTF8FontFromBytes(name, face, data)
+	}
+	d.pdf.SetFont(name, style, size)
 }
 
 // Canvas returns the drawing surface of the document.
@@ -202,24 +235,10 @@ func (v documentCanvas) Bookmark(title string, level int) {
 	for len(d.outline) > 0 && d.outline[len(d.outline)-1] >= level {
 		d.outline = d.outline[:len(d.outline)-1]
 	}
-	// fpdf converts the title to UTF-16 only for UTF-8 fonts. The core fonts
-	// used now would send it as PDFDocEncoding, which differs from cp1252 for
-	// the characters 0x80 to 0x9F, so the title is encoded here. When an
-	// embedded UTF-8 font is used, pass the title unchanged instead.
-	d.pdf.Bookmark(utf16Title(title), len(d.outline), -1)
+	// The current font is always a UTF-8 font, so fpdf writes the title as UTF-16.
+	d.pdf.Bookmark(title, len(d.outline), -1)
 	d.outline = append(d.outline, level)
 	d.headings = append(d.headings, Heading{Text: title, Level: level, Page: d.pdf.PageNo(), Y: d.pdf.GetY()})
-}
-
-// utf16Title encodes text as UTF-16BE with a byte order mark.
-func utf16Title(text string) string {
-	units := utf16.Encode([]rune(text))
-	encoded := make([]byte, 0, 2+2*len(units))
-	encoded = append(encoded, 0xfe, 0xff)
-	for _, unit := range units {
-		encoded = append(encoded, byte(unit>>8), byte(unit))
-	}
-	return string(encoded)
 }
 
 // lineHeight is the height of a line of the block that is being written.
@@ -231,16 +250,16 @@ func (v documentCanvas) lineHeight() float64 {
 }
 func (v documentCanvas) Text(s string) {
 	v.d.fresh = false
-	v.d.pdf.Write(v.lineHeight(), text.ToCP1252(s))
+	v.d.pdf.Write(v.lineHeight(), s)
 }
 func (v documentCanvas) Link(s, url string) {
 	r, g, b := v.d.pdf.GetTextColor()
 	v.d.pdf.SetTextColor(0, 70, 160)
 	if v.d.fontSet {
-		v.d.pdf.SetFont(v.d.font.family, v.styleString()+"U", v.d.font.size)
+		v.d.setFont(v.d.font.family, v.styleString()+"U", v.d.font.size)
 	}
 	v.d.fresh = false
-	v.d.pdf.WriteLinkString(v.lineHeight(), text.ToCP1252(s), url)
+	v.d.pdf.WriteLinkString(v.lineHeight(), s, url)
 	if v.d.fontSet {
 		v.applyFont()
 	}
@@ -257,7 +276,7 @@ func (v documentCanvas) applyFont() {
 	if !v.d.fontSet {
 		return
 	}
-	v.d.pdf.SetFont(v.d.font.family, v.styleString(), v.d.font.size)
+	v.d.setFont(v.d.font.family, v.styleString(), v.d.font.size)
 }
 func (v documentCanvas) LineBreak(h float64) {
 	v.d.pdf.Ln(h)
@@ -288,7 +307,7 @@ func (v documentCanvas) Marker(s string) {
 	const gutter = 14.0
 	left := v.d.margin + v.d.indent
 	v.d.pdf.SetX(left - gutter)
-	v.d.pdf.Write(15, text.ToCP1252(s))
+	v.d.pdf.Write(15, s)
 	if v.d.pdf.GetX() < left {
 		v.d.pdf.SetX(left)
 	}
@@ -303,7 +322,7 @@ func (v documentCanvas) Checkbox(prefix string, checked bool) {
 	pdf := v.d.pdf
 	pdf.SetX(left - gutter)
 	if prefix != "" {
-		pdf.Write(15, text.ToCP1252(prefix))
+		pdf.Write(15, prefix)
 	}
 	x := pdf.GetX()
 	// GetY is the top of the 15 point text line; centre the box on it.
@@ -365,7 +384,6 @@ func (v documentCanvas) Quote(levels int, draw func()) {
 func (v documentCanvas) CodeBlock(lines []string) {
 	limit := int(v.contentWidth() / v.d.pdf.GetStringWidth("M"))
 	for _, line := range lines {
-		line = text.ToCP1252(line)
 		for _, piece := range wrapCode(line, limit) {
 			v.d.pdf.CellFormat(v.contentWidth(), 12, piece, "", 0, "", false, 0, "")
 			v.LineBreak(12)
@@ -375,8 +393,8 @@ func (v documentCanvas) CodeBlock(lines []string) {
 
 // wrapCode splits a code line into pieces of at most limit bytes. It prefers to
 // break right after the last space within limit, but only when that space falls
-// in the second half of limit; otherwise it breaks hard at limit. The line must
-// already be cp1252, where every byte is one character.
+// in the second half of limit; otherwise it breaks hard at limit. limit counts
+// characters, which all have the same width in a monospaced font.
 func wrapCode(line string, limit int) []string {
 	if limit < 1 {
 		limit = 1
@@ -384,17 +402,20 @@ func wrapCode(line string, limit int) []string {
 	if line == "" {
 		return []string{""}
 	}
+	runes := []rune(line)
 	var pieces []string
-	for len(line) > limit {
+	for len(runes) > limit {
 		cut := limit
-		if space := strings.LastIndexByte(line[:limit], ' '); space >= 0 && space*2 >= limit {
-			cut = space + 1
+		for space := limit - 1; space*2 >= limit; space-- {
+			if runes[space] == ' ' {
+				cut = space + 1
+				break
+			}
 		}
-		pieces = append(pieces, line[:cut])
-		line = line[cut:]
+		pieces = append(pieces, string(runes[:cut]))
+		runes = runes[cut:]
 	}
-	pieces = append(pieces, line)
-	return pieces
+	return append(pieces, string(runes))
 }
 
 // Diagram registers and draws a PNG without a temporary file. The PNG was
@@ -623,7 +644,7 @@ func (v documentCanvas) setRunFont(run cellRun, header bool) {
 	if run.url != "" {
 		style += "U"
 	}
-	v.d.pdf.SetFont(family, style, size)
+	v.d.setFont(family, style, size)
 }
 
 func sameRun(a, b cellRun) bool {
@@ -644,7 +665,7 @@ func appendRun(line *cellLine, run cellRun) {
 
 func (v documentCanvas) runWidth(run cellRun, header bool) float64 {
 	v.setRunFont(run, header)
-	return v.d.pdf.GetStringWidth(text.ToCP1252(run.text))
+	return v.d.pdf.GetStringWidth(run.text)
 }
 
 func (v documentCanvas) lineWidth(line cellLine, header bool) float64 {
@@ -852,14 +873,14 @@ func (v documentCanvas) drawCell(cell markdown.Cell, header bool, x, y, width, h
 		}
 		for _, run := range line {
 			v.setRunFont(run, header)
-			runWidth := pdf.GetStringWidth(text.ToCP1252(run.text))
+			runWidth := pdf.GetStringWidth(run.text)
 			if run.url != "" {
 				pdf.SetTextColor(0, 70, 160)
 			}
 			// CellFormat supplies the baseline and the underline/strike drawing.
 			// Its margin is compensated so text starts at start exactly.
 			pdf.SetXY(start-tablePadding/2, y+float64(i)*tableLineHeight)
-			pdf.CellFormat(runWidth+tablePadding, tableLineHeight, text.ToCP1252(run.text), "", 0, "", false, 0, "")
+			pdf.CellFormat(runWidth+tablePadding, tableLineHeight, run.text, "", 0, "", false, 0, "")
 			if run.url != "" {
 				pdf.LinkString(start, y+float64(i)*tableLineHeight, runWidth, tableLineHeight, run.url)
 				pdf.SetTextColor(0, 0, 0)
@@ -922,7 +943,7 @@ func (d *Document) TOC(entries []Heading, offset int) {
 		top = min(top, entry.Level)
 	}
 	const lineHeight = 15.0
-	pdf.SetFont("Helvetica", "", 11)
+	d.setFont("Helvetica", "", 11)
 	for _, entry := range entries {
 		if !canvas.rowFits(lineHeight) {
 			pdf.AddPage()
@@ -937,7 +958,7 @@ func (d *Document) TOC(entries []Heading, offset int) {
 		pdf.SetLink(link, entry.Y, page)
 		x, y := d.margin+indent, pdf.GetY()
 		pdf.SetXY(x, y)
-		pdf.CellFormat(textWidth, lineHeight, fitText(pdf, text.ToCP1252(entry.Text), textWidth-2*pdf.GetCellMargin()), "", 0, "L", false, link, "")
+		pdf.CellFormat(textWidth, lineHeight, fitText(pdf, entry.Text, textWidth-2*pdf.GetCellMargin()), "", 0, "L", false, link, "")
 		pdf.SetXY(d.margin+canvas.contentWidth()-numberWidth, y)
 		pdf.CellFormat(numberWidth, lineHeight, number, "", 0, "R", false, link, "")
 		pdf.SetXY(d.margin, y+lineHeight)
@@ -950,10 +971,12 @@ func fitText(pdf *fpdf.Fpdf, s string, width float64) string {
 	if pdf.GetStringWidth(s) <= width {
 		return s
 	}
-	const ellipsis = "\x85" // … in cp1252
-	for len(s) > 0 && pdf.GetStringWidth(s+ellipsis) > width {
-		s = s[:len(s)-1]
+	const ellipsis = "…"
+	runes := []rune(s)
+	for len(runes) > 0 && pdf.GetStringWidth(string(runes)+ellipsis) > width {
+		runes = runes[:len(runes)-1]
 	}
+	s = string(runes)
 	return strings.TrimRight(s, " ") + ellipsis
 }
 

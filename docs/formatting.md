@@ -27,8 +27,9 @@
 
 ## Characters
 
-Text uses the PDF base-14 fonts, which encode cp1252. Characters outside that encoding are
-transliterated where possible — `→` becomes `->` — and otherwise replaced with a question mark.
+Text is set in DejaVu Sans and code in DejaVu Sans Mono. Both are embedded in `md2pdf` and in every PDF,
+where only the characters that are used are included, so a PDF grows by some tens of kilobytes. They cover
+Latin, Greek and Cyrillic scripts, arrows, and many mathematical and other symbols.
 
 ## Known limitations
 
@@ -36,5 +37,6 @@ transliterated where possible — `→` becomes `->` — and otherwise replaced 
   those formats. An image inside a heading, a table cell or a link also shows its alt text.
 - Footnotes, definition lists, math, and emoji shortcodes appear as plain text.
 - Formatting from HTML (bold, alignment, colour) is not applied; only its text is kept.
-- Characters outside cp1252, such as Cyrillic, Greek, or CJK, become question marks.
+- Characters the fonts do not have, such as Chinese, Japanese, Korean or emoji, show as an empty box.
+  Arabic and Hebrew are not shaped or set right to left.
 - Mermaid diagrams require a working external renderer.

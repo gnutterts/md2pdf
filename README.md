@@ -29,5 +29,6 @@ Mermaid diagrams (`npm install -g @mermaid-js/mermaid-cli`). Without it, diagram
 ## Licence
 
 MIT; see [LICENSE](LICENSE). `md2pdf` links against [goldmark](https://github.com/yuin/goldmark) and
-[fpdf](https://github.com/go-pdf/fpdf), both under the MIT licence; their notices are in
+[fpdf](https://github.com/go-pdf/fpdf), both under the MIT licence, and embeds the
+[DejaVu](https://dejavu-fonts.github.io/) fonts under their own free licence; the notices are in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and ship alongside the released binaries.

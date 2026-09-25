@@ -160,10 +160,11 @@ func TestQuoteLineSpansPageBreak(t *testing.T) {
 	}
 }
 
-func TestCP1252IsInContentStream(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tekens.pdf")
+func TestCharactersOutsideCP1252AreKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "characters.pdf")
 	document := New()
-	blocks := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "café —"}}}}
+	text := "café — Привет, Γειά → ✓"
+	blocks := []markdown.Block{{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: text}}}}
 	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +175,14 @@ func TestCP1252IsInContentStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream := contentStream(t, content)
-	if !bytes.Contains(stream, []byte{0xe9}) {
-		t.Fatalf("cp1252-byte 0xe9 is missing in % x", stream)
+	if !bytes.Contains(contentStream(t, content), []byte("("+text+")")) {
+		t.Fatalf("the text is not kept: %s", contentStream(t, content))
 	}
-	if bytes.Contains(stream, []byte{0xc3, 0xa9}) {
-		t.Fatalf("UTF-8 bytes found in % x", stream)
+	if !bytes.Contains(content, []byte("/FontFile2")) {
+		t.Fatal("no embedded TrueType font")
+	}
+	if len(content) > 100_000 {
+		t.Fatalf("the PDF is %d bytes: the embedded font is not subset", len(content))
 	}
 }
 
@@ -446,8 +449,8 @@ func TestTableStyledRunsAndLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(content, []byte("/BaseFont /Helvetica-Bold")) || !bytes.Contains(content, []byte("/BaseFont /Courier")) {
-		t.Fatal("styled table does not embed bold Helvetica and Courier")
+	if !bytes.Contains(content, []byte("/BaseFont /utf8dejavusansB")) || !bytes.Contains(content, []byte("/BaseFont /utf8dejavusansmono")) {
+		t.Fatal("styled table does not embed bold DejaVu Sans and DejaVu Sans Mono")
 	}
 	if !bytes.Contains(content, []byte("/URI (https://table.example)")) {
 		t.Fatal("table link annotation is missing")
@@ -523,41 +526,69 @@ func contentStream(t *testing.T, pdf []byte) []byte {
 	return stromen[0]
 }
 
-// contentStreams extracts all zlib content streams from a PDF.
+// contentStreams returns the content of every page, in page order, with its
+// text decoded (see decodeText).
 func contentStreams(t *testing.T, pdf []byte) [][]byte {
 	t.Helper()
 	var out [][]byte
-	remaining := pdf
-	for {
-		start := bytes.Index(remaining, []byte("stream\n"))
-		if start < 0 {
-			break
+	for _, page := range regexp.MustCompile(`(?s)\d+ 0 obj\n<</Type /Page\n.*?/Contents (\d+) 0 R`).FindAllSubmatch(pdf, -1) {
+		body := regexp.MustCompile(`(?s)\n` + string(page[1]) + ` 0 obj\n<<[^>]*>>\nstream\n(.*?)\nendstream`).FindSubmatch(pdf)
+		if body == nil {
+			t.Fatalf("no content stream %s", page[1])
 		}
-		start += len("stream\n")
-		end := bytes.Index(remaining[start:], []byte("\nendstream"))
-		if end < 0 {
-			break
-		}
-		reader, err := zlib.NewReader(bytes.NewReader(remaining[start : start+end]))
+		reader, err := zlib.NewReader(bytes.NewReader(body[1]))
 		if err != nil {
-			// Not a Flate stream, such as the data of a JPEG image: not page content.
-			remaining = remaining[start+end+len("\nendstream"):]
-			continue
+			t.Fatal(err)
 		}
 		stream, err := io.ReadAll(reader)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := reader.Close(); err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, stream)
-		remaining = remaining[start+end+len("\nendstream"):]
+		out = append(out, decodeText(stream))
 	}
 	if len(out) == 0 {
 		t.Fatal("no content streams found")
 	}
 	return out
+}
+
+// decodeText rewrites the text strings of a content stream, which fpdf writes
+// as escaped UTF-16BE for the embedded fonts, into plain UTF-8, so that tests
+// can look for "(word)".
+func decodeText(stream []byte) []byte {
+	var out bytes.Buffer
+	for i := 0; i < len(stream); i++ {
+		if stream[i] != '(' {
+			out.WriteByte(stream[i])
+			continue
+		}
+		var raw []byte
+		j := i + 1
+		for ; j < len(stream) && stream[j] != ')'; j++ {
+			if stream[j] == '\\' && j+1 < len(stream) {
+				j++
+				switch stream[j] {
+				case 'n':
+					raw = append(raw, '\n')
+				case 'r':
+					raw = append(raw, '\r')
+				default:
+					raw = append(raw, stream[j])
+				}
+				continue
+			}
+			raw = append(raw, stream[j])
+		}
+		units := make([]uint16, 0, len(raw)/2)
+		for k := 0; k+1 < len(raw); k += 2 {
+			units = append(units, uint16(raw[k])<<8|uint16(raw[k+1]))
+		}
+		out.WriteByte('(')
+		out.WriteString(string(utf16.Decode(units)))
+		out.WriteByte(')')
+		i = j
+	}
+	return out.Bytes()
 }
 
 // pageCount counts the page objects in a PDF.
@@ -1084,7 +1115,11 @@ func TestInlineCodeDoesNotShrinkTheLineHeightOfAHeading(t *testing.T) {
 	for i := 1; i < len(ys); i++ {
 		// fpdf puts the baseline at 0.5*height + 0.3*size, so a smaller run on the same
 		// line sits up to 0.3*(20-17) = 0.9 points higher; the line spacing itself is 27.
-		if gap := ys[i-1] - ys[i]; gap < 26 || gap > 28 {
+		gap := ys[i-1] - ys[i]
+		if gap > -1 && gap < 1 {
+			continue // two runs on the same line
+		}
+		if gap < 26 || gap > 28 {
 			t.Errorf("lines %d and %d are %.2f apart, want about 27 for a size 20 heading", i, i+1, gap)
 		}
 	}
