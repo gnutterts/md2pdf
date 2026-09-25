@@ -4,6 +4,8 @@ package runner
 
 import (
 	"bytes"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -331,5 +333,44 @@ func TestRunSeparateCountsASingleFile(t *testing.T) {
 	plan.Tasks = plan.Tasks[1:2]
 	if err := Run(plan, render.Options{}); err == nil || err.Error() != "1 of 1 file failed" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestMergedFilesShareTheDiagramCache(t *testing.T) {
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "calls")
+	script := filepath.Join(dir, "renderer")
+	pngPath := filepath.Join(dir, "one.png")
+	var pngBytes bytes.Buffer
+	if err := png.Encode(&pngBytes, image.NewRGBA(image.Rect(0, 0, 20, 10))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pngPath, pngBytes.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\necho x >> '" + counter + "'\ncp '" + pngPath + "' \"$4\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	diagram := "```mermaid\ngraph TD\nA-->B\n```\n"
+	var sources []string
+	for i, text := range []string{diagram + diagram, diagram, "```mermaid\ngraph TD\nC-->D\n```\n"} {
+		source := filepath.Join(dir, string(rune('a'+i))+".md")
+		if err := os.WriteFile(source, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sources = append(sources, source)
+	}
+	target := filepath.Join(dir, "out.pdf")
+	options := render.Options{Mermaid: mermaid.Renderer{Path: script}}
+	if err := Run(cli.Plan{Mode: cli.ModeMerged, Tasks: []cli.Task{{Sources: sources, Target: target}}}, options); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := strings.Count(string(data), "x"); calls != 2 {
+		t.Fatalf("the renderer ran %d times, want 2 (one per distinct diagram)", calls)
 	}
 }
