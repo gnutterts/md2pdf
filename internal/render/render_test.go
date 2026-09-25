@@ -29,6 +29,8 @@ type fakeCanvas struct {
 	style  activeStyle
 	tables [][]markdown.Row
 	scales []float64 // the scale of every diagram
+	// keepBreaks is what KeepWithNext reports.
+	keepBreaks bool
 }
 
 func (n *fakeCanvas) NewPage() { n.calls = append(n.calls, "pagina") }
@@ -68,6 +70,10 @@ func (n *fakeCanvas) Diagram(_ []byte, scale float64) error {
 	n.calls = append(n.calls, "diagram")
 	n.scales = append(n.scales, scale)
 	return nil
+}
+func (n *fakeCanvas) KeepWithNext(h float64) bool {
+	n.calls = append(n.calls, fmt.Sprintf("keep:%g", h))
+	return n.keepBreaks
 }
 func (n *fakeCanvas) Rule() { n.calls = append(n.calls, "rule") }
 func (n *fakeCanvas) Bookmark(text string, level int) {
@@ -567,6 +573,39 @@ func TestTheDiagramCacheRendersOnceUnderConcurrency(t *testing.T) {
 	for i, result := range results {
 		if result != "png:graph TD" {
 			t.Errorf("goroutine %d got %q", i, result)
+		}
+	}
+}
+
+func TestAHeadingAsksToKeepWithTheNextBlock(t *testing.T) {
+	blocks := []markdown.Block{
+		{Kind: markdown.Paragraph, Spans: []markdown.Span{{Text: "before"}}},
+		{Kind: markdown.Heading, Level: 2, Spans: []markdown.Span{{Text: "Two"}}},
+	}
+	for _, breaks := range []bool{false, true} {
+		canvas := &fakeCanvas{keepBreaks: breaks}
+		if err := Draw(blocks, canvas, Options{}); err != nil {
+			t.Fatal(err)
+		}
+		keep, spaceAbove, bookmark := -1, -1, -1
+		for i, call := range canvas.calls {
+			switch {
+			case strings.HasPrefix(call, "keep:"):
+				keep = i
+				if call != "keep:69.5" { // 12 above + 21.5 line + 6 below + 2 x 15 following
+					t.Errorf("keep call %q, want keep:69.5", call)
+				}
+			case call == "end:12" && keep >= 0 && spaceAbove < 0:
+				spaceAbove = i
+			case strings.HasPrefix(call, "bookmark:"):
+				bookmark = i
+			}
+		}
+		if keep < 0 || bookmark < keep {
+			t.Fatalf("keep must come before the bookmark: %v", canvas.calls)
+		}
+		if breaks == (spaceAbove >= 0) {
+			t.Errorf("new page = %v, but space above the heading drawn = %v", breaks, spaceAbove >= 0)
 		}
 	}
 }

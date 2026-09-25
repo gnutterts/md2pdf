@@ -42,6 +42,9 @@ type Canvas interface {
 	HangingIndent()
 	CodeBlock(lines []string)
 	Rule()
+	// KeepWithNext starts a new page when height no longer fits on the current
+	// one, unless the page is still empty. It reports whether it did.
+	KeepWithNext(height float64) bool
 	// Bookmark adds an entry to the outline of the PDF at the current position.
 	Bookmark(text string, level int)
 	// Table draws a complete table: the canvas determines column widths and
@@ -122,9 +125,6 @@ func Draw(blocks []markdown.Block, canvas Canvas, options Options) error {
 func drawBlock(canvas Canvas, block markdown.Block, options Options, state *drawState, spaceAfter bool) {
 	switch block.Kind {
 	case markdown.Heading:
-		if !state.first {
-			canvas.LineBreak(12)
-		}
 		base := baseStyle{family: "Helvetica", size: 11, bold: true}
 		switch block.Level {
 		case 5:
@@ -140,6 +140,15 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, state *draw
 		}
 		if block.Level == 3 {
 			base.size = 13
+		}
+		// A heading needs room for itself and two lines of what follows;
+		// otherwise it starts on the next page instead of ending this one.
+		space := LineHeight(base.size) + 6 + 2*lineHeight
+		if !state.first {
+			space += 12
+		}
+		if !canvas.KeepWithNext(space) && !state.first {
+			canvas.LineBreak(12)
 		}
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
