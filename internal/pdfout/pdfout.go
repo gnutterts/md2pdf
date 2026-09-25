@@ -331,7 +331,7 @@ func (v documentCanvas) Quote(levels int, draw func()) {
 	_, top, _, bottom := pdf.GetMargins()
 
 	for level := 1; level <= levels; level++ {
-		x := v.d.margin + min(14*float64(level-1), v.d.maxIndent()) + 4
+		x := v.d.margin + min(14*float64(level-1), max(v.d.maxIndent()-14, 0)) + 4 // stays left of the capped text
 		for page := startPage; page <= endPage; page++ {
 			pdf.SetPage(page)
 			pdf.SetDrawColor(180, 180, 180)

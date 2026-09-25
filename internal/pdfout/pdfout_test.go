@@ -1227,6 +1227,37 @@ func TestDeepNestingKeepsAReadableTextWidth(t *testing.T) {
 	}
 }
 
+func TestQuoteBarsStayLeftOfTheTextUnderDeepNesting(t *testing.T) {
+	var blocks []markdown.Block
+	for level := 1; level <= 40; level++ {
+		blocks = append(blocks, markdown.Block{Kind: markdown.Paragraph, Quote: level, Spans: []markdown.Span{{Text: "quote text"}}})
+	}
+	document := New()
+	if err := render.Draw(blocks, document.Canvas(), render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "bars.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	stream := contentStream(t, content)
+	bars := regexp.MustCompile(`([\d.]+) [\d.]+ m ([\d.]+) [\d.]+ l S`).FindAllSubmatch(stream, -1)
+	if len(bars) == 0 {
+		t.Fatal("no quote bars")
+	}
+	deepest := 0.0
+	for _, bar := range bars {
+		x, _ := strconv.ParseFloat(string(bar[1]), 64)
+		deepest = max(deepest, x)
+	}
+	// The text of the deepest levels starts at the cap; a bar there would run through it.
+	capX := DefaultMargin + New().maxIndent()
+	if deepest >= capX {
+		t.Errorf("a quote bar at x=%.1f reaches the text column at the cap (x=%.1f)", deepest, capX)
+	}
+}
+
 func TestIndentingBackIsExactAfterCapping(t *testing.T) {
 	document := New()
 	canvas := document.Canvas()
