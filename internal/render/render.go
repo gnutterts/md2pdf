@@ -116,8 +116,8 @@ func drawBlock(canvas Canvas, block markdown.Block, options Options, first *bool
 		}
 		indent := continuationIndent(block)
 		canvas.Indent(indent)
-		canvas.Bookmark(markdown.PlainText(block.Spans), block.Level)
 		canvas.Style(base.family, base.bold, base.italic, base.size)
+		canvas.Bookmark(markdown.PlainText(block.Spans), block.Level)
 		spans(canvas, block.Spans, base)
 		canvas.LineBreak(heightFor(base.size))
 		canvas.Indent(-indent)

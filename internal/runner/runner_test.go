@@ -183,7 +183,7 @@ func pdfInfo(t *testing.T, path, key string) string {
 		t.Fatal(err)
 	}
 	marker := []byte("/" + key + " (\xfe\xff")
-	at := bytes.Index(content, marker)
+	at := bytes.LastIndex(content, marker)
 	if at < 0 {
 		return ""
 	}

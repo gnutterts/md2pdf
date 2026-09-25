@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
@@ -28,10 +29,9 @@ type Document struct {
 	indent float64
 	images int
 
-	// lastLevel is the outline level of the previous bookmark, -1 before the first.
-	lastLevel int
-	// baseLevel is the heading level that becomes outline level 0.
-	baseLevel int
+	// outline holds the heading levels of the bookmarks that are still open; its
+	// length is the outline depth of the next bookmark.
+	outline []int
 
 	font    fontStyle
 	fontSet bool
@@ -52,7 +52,7 @@ func New() *Document {
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()
-	return &Document{pdf: pdf, lastLevel: -1}
+	return &Document{pdf: pdf}
 }
 
 // SetInfo sets the document information; empty values are left unset.
@@ -123,24 +123,40 @@ func (v documentCanvas) Strike(on bool) {
 	v.applyFont()
 }
 
-// Bookmark adds an outline entry for a heading. Levels are made contiguous:
-// the first heading of the document is level 0 and an entry is at most one
-// level deeper than the one before it, because fpdf builds a crooked tree
-// otherwise.
+// Bookmark adds an outline entry for a heading. The outline depth is the
+// number of open headings of a lower level, so levels are contiguous whatever
+// the heading levels do (a skipped level, a document that starts at level 3,
+// or a merged file that starts again at level 1). The entry is placed on the
+// page where the heading text starts: when the heading no longer fits on the
+// current page, a new page is started first.
 func (v documentCanvas) Bookmark(title string, level int) {
 	if title == "" {
 		return
 	}
 	d := v.d
-	if d.lastLevel < 0 {
-		d.baseLevel = level
+	if !v.rowFits(math.Max(15, d.font.size*1.35)) {
+		v.NewPage()
 	}
-	normal := max(level-d.baseLevel, 0)
-	if normal > d.lastLevel+1 {
-		normal = d.lastLevel + 1
+	for len(d.outline) > 0 && d.outline[len(d.outline)-1] >= level {
+		d.outline = d.outline[:len(d.outline)-1]
 	}
-	d.lastLevel = normal
-	d.pdf.Bookmark(text.ToCP1252(title), normal, -1)
+	// fpdf converts the title to UTF-16 only for UTF-8 fonts. The core fonts
+	// used now would send it as PDFDocEncoding, which differs from cp1252 for
+	// the characters 0x80 to 0x9F, so the title is encoded here. When an
+	// embedded UTF-8 font is used, pass the title unchanged instead.
+	d.pdf.Bookmark(utf16Title(title), len(d.outline), -1)
+	d.outline = append(d.outline, level)
+}
+
+// utf16Title encodes text as UTF-16BE with a byte order mark.
+func utf16Title(text string) string {
+	units := utf16.Encode([]rune(text))
+	encoded := make([]byte, 0, 2+2*len(units))
+	encoded = append(encoded, 0xfe, 0xff)
+	for _, unit := range units {
+		encoded = append(encoded, byte(unit>>8), byte(unit))
+	}
+	return string(encoded)
 }
 func (v documentCanvas) Text(s string) { v.d.pdf.Write(15, text.ToCP1252(s)) }
 func (v documentCanvas) Link(s, url string) {

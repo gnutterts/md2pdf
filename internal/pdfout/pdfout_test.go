@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/gnutterts/md2pdf/internal/markdown"
 	"github.com/gnutterts/md2pdf/internal/render"
@@ -772,19 +773,38 @@ func TestPageNumbersAppearInTheFooter(t *testing.T) {
 	canvas.Text("third")
 	target := filepath.Join(t.TempDir(), "numbers.pdf")
 =======
+// outlineTitles decodes the UTF-16 titles of the outline entries in document order.
+func outlineTitles(content []byte) []string {
+	var titles []string
+	marker := []byte("/Title (\xfe\xff")
+	for rest := content; ; {
+		at := bytes.Index(rest, marker)
+		if at < 0 {
+			return titles
+		}
+		raw := rest[at+len(marker):]
+		raw = raw[:bytes.IndexByte(raw, ')')]
+		var units []uint16
+		for i := 0; i+1 < len(raw); i += 2 {
+			units = append(units, uint16(raw[i])<<8|uint16(raw[i+1]))
+		}
+		titles = append(titles, string(utf16.Decode(units)))
+		rest = rest[at+len(marker):]
+	}
+}
+
 func TestBookmarksFormAContiguousOutline(t *testing.T) {
 	document := New()
 	canvas := document.Canvas()
 	canvas.Style("Helvetica", true, false, 20)
-	canvas.Bookmark("First", 1)
-	canvas.Text("First")
-	canvas.LineBreak(20)
-	canvas.Bookmark("Deep", 3) // skips level 2: must become a child of First
-	canvas.Text("Deep")
-	canvas.LineBreak(20)
-	canvas.NewPage()
-	canvas.Bookmark("Sibling", 2)
-	canvas.Text("Sibling")
+	for _, heading := range []struct {
+		title string
+		level int
+	}{{"First", 3}, {"Deep", 5}, {"Back", 1}, {"Again", 3}} {
+		canvas.Bookmark(heading.title, heading.level)
+		canvas.Text(heading.title)
+		canvas.LineBreak(20)
+	}
 	target := filepath.Join(t.TempDir(), "outline.pdf")
 >>>>>>> 2f42683 (Add a bookmark for every heading)
 	if err := document.Write(target); err != nil {
@@ -794,7 +814,6 @@ func TestBookmarksFormAContiguousOutline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-<<<<<<< HEAD
 	streams := contentStreams(t, content)
 	if len(streams) != 3 {
 		t.Fatalf("%d content streams, want 3", len(streams))
@@ -865,22 +884,58 @@ func TestPageBreakAfterFooterKeepsFontAndColour(t *testing.T) {
 	canvas.NewPage()
 	canvas.Text("after")
 	target := filepath.Join(t.TempDir(), "font.pdf")
-=======
 	if !bytes.Contains(content, []byte("/Outlines")) {
 		t.Fatal("no outline in the PDF")
 	}
-	titles := regexp.MustCompile(`/Title \(([^)]*)\)`).FindAllSubmatch(content, -1)
-	var got []string
-	for _, match := range titles {
-		got = append(got, string(match[1]))
-	}
-	want := []string{"First", "Deep", "Sibling"}
-	if !reflect.DeepEqual(got, want) {
+	// Levels 3, 5, 1, 3 become depths 0, 1, 0, 1: two top entries with one child each.
+	if got, want := outlineTitles(content), []string{"First", "Deep", "Back", "Again"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("outline titles = %v, want %v", got, want)
 	}
-	// First (level 0) has two children: Deep and Sibling (both level 1).
-	if !bytes.Contains(content, []byte("/Count 2")) {
-		t.Fatalf("first entry should hold two children:\n%s", regexp.MustCompile(`(?s)/Type /Outlines.*?endobj`).Find(content))
+	// fpdf writes /First for the outline root and for every entry that has children.
+	if n := bytes.Count(content, []byte("/First ")); n != 3 {
+		t.Fatalf("%d /First references, want 3 (the root and two parents)", n)
+	}
+}
+
+func TestBookmarkTitlesKeepTheirCharacters(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	canvas.Bookmark("Cost: \u20ac5 \u2014 \u201cquoted\u201d \u2122 caf\u00e9 \u0416", 1)
+	target := filepath.Join(t.TempDir(), "unicode.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	want := "Cost: \u20ac5 \u2014 \u201cquoted\u201d \u2122 caf\u00e9 \u0416"
+	if got := outlineTitles(content); len(got) != 1 || got[0] != want {
+		t.Fatalf("outline titles = %q, want %q", got, want)
+	}
+}
+
+func TestBookmarkAtTheBottomStartsOnTheNextPage(t *testing.T) {
+	document := New()
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", true, false, 20)
+	for document.pdf.GetY() < 780 { // the text area ends at 841.89 - 56
+		canvas.Text("filler")
+		canvas.LineBreak(27)
+	}
+	canvas.Bookmark("Late", 1)
+	canvas.Text("Late")
+	target := filepath.Join(t.TempDir(), "late.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	dests := regexp.MustCompile(`/Dest \[(\d+) 0 R /XYZ`).FindSubmatch(content)
+	if dests == nil {
+		t.Fatal("no bookmark destination")
+	}
+	// The heading text is on the last page; the destination must be that page object.
+	last := regexp.MustCompile(`(\d+) 0 obj\n<</Type /Page\n`).FindAllSubmatch(content, -1)
+	if len(last) < 2 || string(dests[1]) != string(last[len(last)-1][1]) {
+		t.Fatalf("bookmark points at page object %s, the heading is on %s", dests[1], last[len(last)-1][1])
 	}
 }
 
@@ -892,12 +947,10 @@ func TestBookmarkOnSecondPageTargetsThatPage(t *testing.T) {
 	canvas.NewPage()
 	canvas.Bookmark("Late", 1)
 	target := filepath.Join(t.TempDir(), "dest.pdf")
->>>>>>> 2f42683 (Add a bookmark for every heading)
 	if err := document.Write(target); err != nil {
 		t.Fatal(err)
 	}
 	content, _ := os.ReadFile(target)
-<<<<<<< HEAD
 	streams := contentStreams(t, content)
 	if !strings.Contains(string(streams[0]), "0.502 g") {
 		t.Fatal("the footer of page 1 is not grey; this test no longer checks anything")
@@ -910,10 +963,8 @@ func TestBookmarkOnSecondPageTargetsThatPage(t *testing.T) {
 	before := second[:at]
 	if strings.Contains(before, "0.502 g") {
 		t.Fatal("body text after the footer is still grey")
-=======
 	dests := regexp.MustCompile(`/Dest \[(\d+) 0 R /XYZ`).FindAllSubmatch(content, -1)
 	if len(dests) != 2 || string(dests[0][1]) == string(dests[1][1]) {
 		t.Fatalf("both bookmarks point at the same page: %q", dests)
->>>>>>> 2f42683 (Add a bookmark for every heading)
 	}
 }
