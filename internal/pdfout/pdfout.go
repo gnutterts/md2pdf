@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -61,6 +62,8 @@ type Document struct {
 	// outline holds the heading levels of the bookmarks that are still open; its
 	// length is the outline depth of the next bookmark.
 	outline []int
+	// headings are all headings drawn so far, for a table of contents.
+	headings []Heading
 
 	font    fontStyle
 	fontSet bool
@@ -205,6 +208,7 @@ func (v documentCanvas) Bookmark(title string, level int) {
 	// embedded UTF-8 font is used, pass the title unchanged instead.
 	d.pdf.Bookmark(utf16Title(title), len(d.outline), -1)
 	d.outline = append(d.outline, level)
+	d.headings = append(d.headings, Heading{Text: title, Level: level, Page: d.pdf.PageNo(), Y: d.pdf.GetY()})
 }
 
 // utf16Title encodes text as UTF-16BE with a byte order mark.
@@ -883,3 +887,80 @@ func (v documentCanvas) Rule() {
 func (v documentCanvas) Err() error            { return v.d.pdf.Error() }
 func (v documentCanvas) resetX()               { v.d.pdf.SetX(v.d.margin + v.d.indent) }
 func (v documentCanvas) contentWidth() float64 { return v.d.width - 2*v.d.margin - v.d.indent }
+
+// Heading is a heading as it was placed: its text, its level (1 to 6), the page
+// it is on and its distance from the top of that page.
+type Heading struct {
+	Text  string
+	Level int
+	Page  int
+	Y     float64
+}
+
+// Headings returns the headings drawn so far, in document order.
+func (d *Document) Headings() []Heading { return append([]Heading(nil), d.headings...) }
+
+// PageCount is the number of pages so far.
+func (d *Document) PageCount() int { return d.pdf.PageCount() }
+
+// TOCTitle is the heading of the table of contents.
+const TOCTitle = "Contents"
+
+// TOC draws a table of contents of entries at the current position: a title,
+// then one line per entry with its text, indented by level, and its page
+// number, both clickable. offset is added to every page number, for the pages
+// the table itself takes. It ends on a new page, ready for the document.
+func (d *Document) TOC(entries []Heading, offset int) {
+	pdf := d.pdf
+	canvas := documentCanvas{d: d}
+	canvas.Style("Helvetica", true, false, 20)
+	canvas.Text(TOCTitle)
+	canvas.LineBreak(27)
+	canvas.LineBreak(6)
+	top := 6
+	for _, entry := range entries {
+		top = min(top, entry.Level)
+	}
+	const lineHeight = 15.0
+	pdf.SetFont("Helvetica", "", 11)
+	for _, entry := range entries {
+		if !canvas.rowFits(lineHeight) {
+			pdf.AddPage()
+			canvas.resetX()
+		}
+		indent := 14 * float64(entry.Level-top)
+		page := entry.Page + offset
+		number := strconv.Itoa(page)
+		numberWidth := pdf.GetStringWidth(number) + 2*pdf.GetCellMargin()
+		textWidth := canvas.contentWidth() - indent - numberWidth - 12
+		link := pdf.AddLink()
+		pdf.SetLink(link, entry.Y, page)
+		x, y := d.margin+indent, pdf.GetY()
+		pdf.SetXY(x, y)
+		pdf.CellFormat(textWidth, lineHeight, fitText(pdf, text.ToCP1252(entry.Text), textWidth-2*pdf.GetCellMargin()), "", 0, "L", false, link, "")
+		pdf.SetXY(d.margin+canvas.contentWidth()-numberWidth, y)
+		pdf.CellFormat(numberWidth, lineHeight, number, "", 0, "R", false, link, "")
+		pdf.SetXY(d.margin, y+lineHeight)
+	}
+	canvas.NewPage()
+}
+
+// fitText shortens s with an ellipsis until it is at most width wide.
+func fitText(pdf *fpdf.Fpdf, s string, width float64) string {
+	if pdf.GetStringWidth(s) <= width {
+		return s
+	}
+	const ellipsis = "\x85" // … in cp1252
+	for len(s) > 0 && pdf.GetStringWidth(s+ellipsis) > width {
+		s = s[:len(s)-1]
+	}
+	return strings.TrimRight(s, " ") + ellipsis
+}
+
+// TOCPages is the number of pages a table of contents of entries takes with
+// this layout.
+func TOCPages(layout Layout, entries []Heading, offset int) int {
+	scratch := NewWithLayout(layout)
+	scratch.TOC(entries, offset)
+	return scratch.pdf.PageNo() - 1
+}
