@@ -334,3 +334,34 @@ func TestParseProtectsExistingOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestParseRefusesAnOutputThatIsTheSameFileOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "notes.md")
+	if err := os.WriteFile(source, []byte("# x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.txt")
+	if err := os.Symlink(source, link); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	hard := filepath.Join(dir, "hard.txt")
+	if err := os.Link(source, hard); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{"symbolic link": link, "hard link": hard, "relative spelling": filepath.Join(dir, ".", "sub", "..", "notes.md")}
+	// On a case-insensitive file system another spelling is the same file too.
+	if _, err := os.Stat(filepath.Join(dir, "NOTES.MD")); err == nil {
+		cases["other case"] = filepath.Join(dir, "NOTES.MD")
+	}
+	for name, output := range cases {
+		t.Run(name, func(t *testing.T) {
+			for _, extra := range [][]string{nil, {"--force"}} {
+				args := append(append(extra, "-o", output), source)
+				if _, err := Parse(args, OSFileSystem{}); err == nil || !strings.Contains(err.Error(), "is also an input") {
+					t.Fatalf("Parse(%v) error = %v, want \"is also an input\"", args, err)
+				}
+			}
+		})
+	}
+}

@@ -364,13 +364,12 @@ func ParseLength(text string) (float64, error) {
 // normal repeated run and stays allowed.
 func checkOutputs(plan Plan, force bool, fs FileSystem) error {
 	for _, task := range plan.Tasks {
-		target := filepath.Clean(task.Target)
 		for _, source := range task.Sources {
-			if filepath.Clean(source) == target {
+			if sameFile(source, task.Target) {
 				return fmt.Errorf("output %q is also an input", task.Target)
 			}
 		}
-		if force || strings.EqualFold(filepath.Ext(target), ".pdf") {
+		if force || strings.EqualFold(filepath.Ext(task.Target), ".pdf") {
 			continue
 		}
 		if _, err := fs.Stat(task.Target); err == nil {
@@ -378,4 +377,21 @@ func checkOutputs(plan Plan, force bool, fs FileSystem) error {
 		}
 	}
 	return nil
+}
+
+// sameFile reports whether two paths name the same file: the same absolute
+// path, or, when both exist, the same file on disk (through a symbolic link, a
+// hard link, or a different spelling on a case-insensitive file system).
+func sameFile(a, b string) bool {
+	if absA, err := filepath.Abs(a); err == nil {
+		if absB, err := filepath.Abs(b); err == nil && absA == absB {
+			return true
+		}
+	}
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	infoB, err := os.Stat(b)
+	return err == nil && os.SameFile(infoA, infoB)
 }
