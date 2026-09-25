@@ -4,6 +4,7 @@ package cli
 
 import (
 	"errors"
+	"github.com/gnutterts/md2pdf/internal/font"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -406,7 +407,8 @@ func TestParseTOC(t *testing.T) {
 
 func TestParseFontDirectories(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "Regular.ttf"), []byte{0, 1, 0, 0, 1, 2, 3}, 0o600)
+	regular, _ := font.Bytes(font.Sans, "")
+	os.WriteFile(filepath.Join(dir, "Regular.ttf"), regular, 0o600)
 	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
 	plan, err := Parse([]string{"--font", dir, "--font-mono", dir, "notes.md"}, fs)
 	if err != nil || plan.Font != dir || plan.MonoFont != dir {

@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/go-pdf/fpdf"
 )
 
 //go:embed *.ttf
@@ -50,7 +52,8 @@ func FromDir(dir, style string) ([]byte, error) {
 	}
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	if errors.Is(err, os.ErrNotExist) && style != "" {
-		data, err = os.ReadFile(filepath.Join(dir, styleFiles[""]))
+		name = styleFiles[""]
+		data, err = os.ReadFile(filepath.Join(dir, name))
 	}
 	if err != nil {
 		return nil, err
@@ -77,10 +80,16 @@ func CheckDir(dir string) error {
 		if errors.Is(err, os.ErrNotExist) && style != "" {
 			continue
 		}
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("font directory %q needs Regular.ttf", dir)
+		}
 		if err != nil {
-			return fmt.Errorf("font directory %q needs Regular.ttf: %w", dir, err)
+			return fmt.Errorf("%s: %w", path, err)
 		}
 		if err := checkTrueType(data); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if err := tryFont(data); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 	}
@@ -97,4 +106,23 @@ func checkTrueType(data []byte) error {
 	default:
 		return errors.New("not a TrueType font")
 	}
+}
+
+// tryFont loads a font into a scratch fpdf document, so that a file fpdf cannot
+// parse is reported here and not as an error when the PDF is written.
+func tryFont(data []byte) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("cannot read the font: %v", recovered)
+		}
+	}()
+	pdf := fpdf.New("P", "pt", "A4", "")
+	pdf.AddUTF8FontFromBytes("trial", "", data)
+	pdf.AddPage()
+	pdf.SetFont("trial", "", 11)
+	pdf.Write(15, "Aa")
+	if err := pdf.Error(); err != nil {
+		return fmt.Errorf("cannot read the font: %w", err)
+	}
+	return nil
 }

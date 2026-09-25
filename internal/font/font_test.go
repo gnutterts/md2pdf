@@ -67,3 +67,15 @@ func TestFontDirectories(t *testing.T) {
 		t.Errorf("an OpenType font should explain the .otf problem: %v", err)
 	}
 }
+
+func TestErrorsNameTheFileThatIsWrong(t *testing.T) {
+	regular, _ := Bytes(Sans, "")
+	dir := fontDir(t, map[string][]byte{"Regular.ttf": regular, "Italic.ttf": []byte("junk")})
+	if err := CheckDir(dir); err == nil || !strings.Contains(err.Error(), "Italic.ttf") {
+		t.Fatalf("err = %v, want it to name Italic.ttf", err)
+	}
+	broken := fontDir(t, map[string][]byte{"Regular.ttf": []byte("junk")})
+	if _, err := FromDir(broken, "B"); err == nil || !strings.Contains(err.Error(), "Regular.ttf") {
+		t.Fatalf("fallback err = %v, want it to name Regular.ttf", err)
+	}
+}
