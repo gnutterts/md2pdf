@@ -20,7 +20,8 @@ md2pdf [flags] <file.md | directory>
 | `--strict` | Treat every warning as an error: stop at the first one, write no PDF, and exit with code 1 |
 | `--force` | Allow `-o` to overwrite an existing file that is not a PDF |
 | `--no-page-numbers` | Leave the page numbers out |
-| `--paper <size>` | Paper size: `a4` (default), `a5`, `a3`, `letter` or `legal`, portrait |
+| `--paper <size>` | Paper size: `a4` (default), `a5`, `a3`, `letter` or `legal`, portrait unless `--landscape` |
+| `--landscape` | Turn the paper on its side, for wide tables and diagrams |
 | `--margin <length>` | Margin on every side, such as `20mm`, `0.75in` or `56pt`; a bare number is in points. Default `64pt`; at most a quarter of the shortest side of the paper |
 | `--version` | Print the version |
 | `-h`, `--help` | Print usage |

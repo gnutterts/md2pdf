@@ -57,6 +57,23 @@ func TestRunSingleWritesPDF(t *testing.T) {
 	}
 }
 
+func TestRunLandscapeWritesLandscapePDF(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "landscape.pdf")
+	plan := cli.Plan{Landscape: true, Mode: cli.ModeSingle, Tasks: []cli.Task{{
+		Sources: []string{readPath("sample.md")}, Target: target,
+	}}}
+	if err := Run(plan, render.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(content, []byte("/MediaBox [0 0 841.89 595.28]")) {
+		t.Fatalf("page is not landscape A4: %s", content)
+	}
+}
+
 func TestRunMergedWritesPages(t *testing.T) {
 	sources := pageSources()
 	target := filepath.Join(t.TempDir(), "pages.pdf")

@@ -28,8 +28,9 @@ const DefaultMargin = 64.0
 
 // Layout is the paper size and margin of a document.
 type Layout struct {
-	Paper  string  // a3, a4, a5, letter or legal; empty means a4
-	Margin float64 // points on every side; 0 means DefaultMargin
+	Paper     string  // a3, a4, a5, letter or legal; empty means a4
+	Margin    float64 // points on every side; 0 means DefaultMargin
+	Landscape bool    // turn the paper on its side
 	// Font and MonoFont are directories with Regular.ttf and optionally
 	// Bold.ttf, Italic.ttf and BoldItalic.ttf, used instead of the embedded
 	// DejaVu fonts for text and for code. Empty means the embedded font.
@@ -52,7 +53,7 @@ func PaperSize(name string) (width, height float64, ok bool) {
 	return size[0], size[1], ok
 }
 
-// Document is an A4 PDF with a drawing surface.
+// Document is a PDF with a drawing surface.
 type Document struct {
 	pdf    *fpdf.Fpdf
 	margin float64
@@ -93,7 +94,7 @@ type fontStyle struct {
 	size   float64
 }
 
-// New creates an empty A4 document with the default margin.
+// New creates an empty document with the default A4 paper and margin.
 func New() *Document { return NewWithLayout(Layout{}) }
 
 // NewWithLayout creates an empty document with the given paper size and margin.
@@ -106,7 +107,11 @@ func NewWithLayout(layout Layout) *Document {
 	if margin <= 0 {
 		margin = DefaultMargin
 	}
-	pdf := fpdf.New("P", "pt", paper, "")
+	orientation := "P"
+	if layout.Landscape {
+		orientation = "L"
+	}
+	pdf := fpdf.New(orientation, "pt", paper, "")
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin)
 	pdf.AddPage()

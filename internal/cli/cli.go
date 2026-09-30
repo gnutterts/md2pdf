@@ -57,8 +57,10 @@ type Plan struct {
 	// Strict turns warnings into errors (--strict).
 	Strict bool
 	// Paper and Margin come from --paper and --margin; empty and zero mean the defaults.
-	Paper  string
-	Margin float64
+	// Landscape turns the paper on its side (--landscape).
+	Paper     string
+	Margin    float64
+	Landscape bool
 	// NoPageNumbers is set by --no-page-numbers; by default every page is numbered.
 	NoPageNumbers bool
 	// Creator names the program in the PDF; the entry point sets it.
@@ -122,6 +124,7 @@ Document
                              level 1 heading, or file name)
   --author <text>            document author (default: front matter)
   --paper <size>             a4 (default), a5, a3, letter or legal
+  --landscape                turn the paper on its side
   --margin <length>          margin on every side, e.g. 20mm, 0.75in, 64pt
   --no-page-numbers          leave the page numbers out
   --toc                      start with a clickable table of contents
@@ -190,6 +193,7 @@ func Parse(args []string, fs FileSystem) (Plan, error) {
 	plan.Scale = f.scale
 	plan.MermaidTimeout = f.timeout
 	plan.Strict = f.strict
+	plan.Landscape = f.landscape
 	if err := checkOutputs(plan, f.force, fs); err != nil {
 		return Plan{}, err
 	}
@@ -216,6 +220,7 @@ type flags struct {
 	strict    bool
 	force     bool
 	paper     string
+	landscape bool
 	margin    string
 	positions []string
 }
@@ -271,6 +276,8 @@ func parseArgs(args []string) (flags, error) {
 			f.noNumbers = true
 		case "--paper":
 			f.paper, err = value(&i, "--paper")
+		case "--landscape":
+			f.landscape = true
 		case "--margin":
 			f.margin, err = value(&i, "--margin")
 		case "--mermaid-timeout":

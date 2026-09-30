@@ -1042,6 +1042,32 @@ func TestLayoutSetsPaperAndMargin(t *testing.T) {
 	}
 }
 
+func TestLandscapeLayout(t *testing.T) {
+	document := NewWithLayout(Layout{Landscape: true})
+	target := filepath.Join(t.TempDir(), "a4-landscape.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(target)
+	if !bytes.Contains(content, []byte("/MediaBox [0 0 841.89 595.28]")) {
+		t.Fatalf("page is not landscape A4: %s", regexp.MustCompile(`/MediaBox \[[^\]]*\]`).Find(content))
+	}
+
+	document = NewWithLayout(Layout{Paper: "letter", Margin: 36, Landscape: true})
+	canvas := document.Canvas()
+	canvas.Style("Helvetica", false, false, 11)
+	canvas.Rule()
+	target = filepath.Join(t.TempDir(), "letter-landscape.pdf")
+	if err := document.Write(target); err != nil {
+		t.Fatal(err)
+	}
+	content, _ = os.ReadFile(target)
+	stream := contentStream(t, content)
+	if !regexp.MustCompile(`36\.00 [\d.]+ m 756\.00 [\d.]+ l S`).Match(stream) {
+		t.Fatalf("rule does not run from 36 to 756:\n%s", stream)
+	}
+}
+
 func TestDefaultLayoutIsA4WithTheDefaultMargin(t *testing.T) {
 	document := New()
 	canvas := document.Canvas()
