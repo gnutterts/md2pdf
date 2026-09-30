@@ -295,6 +295,26 @@ func TestParsePaperAndMargin(t *testing.T) {
 	}
 }
 
+func TestParseLandscape(t *testing.T) {
+	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
+	for _, test := range []struct {
+		args      []string
+		wantPaper string
+		want      bool
+	}{
+		{[]string{"notes.md"}, "", false},
+		{[]string{"--landscape", "notes.md"}, "", true},
+		{[]string{"--landscape", "--paper", "a5", "notes.md"}, "a5", true},
+		{[]string{"--paper", "a5", "--landscape", "notes.md"}, "a5", true},
+		{[]string{"notes.md", "--landscape", "--landscape"}, "", true},
+	} {
+		plan, err := Parse(test.args, fs)
+		if err != nil || plan.Landscape != test.want || plan.Paper != test.wantPaper {
+			t.Fatalf("Parse(%v): Landscape=%v Paper=%q err=%v", test.args, plan.Landscape, plan.Paper, err)
+		}
+	}
+}
+
 func TestParseStrict(t *testing.T) {
 	fs := fakeFileSystem{paths: map[string]bool{"notes.md": false}}
 	if plan, err := Parse([]string{"notes.md"}, fs); err != nil || plan.Strict {

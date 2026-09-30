@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-09-30
+
+This release turns pages on their side.
+
+### Added
+
+- `--landscape` turns the chosen paper size on its side for wide tables and diagrams.
+
 ## 1.0.0 — 2026-09-26
 
 This release draws every character, and makes the command line a promise.
